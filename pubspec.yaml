@@ -1,7 +1,7 @@
 name: event_log
-description: יומן אירועים - תיעוד מהיר של כל דבר שדורש מעקב (תינוק, הריון, תרופות, בריאות).
+description: יומנון - תיעוד מהיר של כל דבר שדורש מעקב (תינוק, הריון, תרופות, בריאות).
 publish_to: 'none'
-version: 0.2.0+2
+version: 0.3.0+3
 
 environment:
   sdk: ^3.5.0
@@ -30,3 +30,29 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # פונטים מקומיים (OFL, רישיונות ב-assets/fonts/OFL-*.txt) כדי שיעבדו גם בלי רשת.
+  fonts:
+    - family: Heebo
+      fonts:
+        - asset: assets/fonts/Heebo-Regular.ttf
+        - asset: assets/fonts/Heebo-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Heebo-Bold.ttf
+          weight: 700
+    - family: Rubik
+      fonts:
+        - asset: assets/fonts/Rubik-Regular.ttf
+        - asset: assets/fonts/Rubik-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Rubik-Bold.ttf
+          weight: 700
+    - family: Assistant
+      fonts:
+        - asset: assets/fonts/Assistant-Regular.ttf
+        - asset: assets/fonts/Assistant-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Assistant-Bold.ttf
+          weight: 700
+    - family: VarelaRound
+      fonts:
+        - asset: assets/fonts/VarelaRound-Regular.ttf

@@ -12,6 +12,7 @@ import 'screens/log_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/stats_screen.dart';
 import 'services/notifications.dart';
+import 'theme/skins.dart';
 import 'widgets/log_sheet.dart';
 
 Future<void> main() async {
@@ -30,40 +31,29 @@ class EventLogApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF42A5F5));
-    return MaterialApp(
-      title: 'יומן אירועים',
-      debugShowCheckedModeBanner: false,
-      locale: const Locale('he'),
-      supportedLocales: const [Locale('he'), Locale('en')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      theme: ThemeData(
-        colorScheme: scheme,
-        useMaterial3: true,
-        cardTheme: const CardThemeData(
-          margin: EdgeInsets.symmetric(vertical: 4),
+    return ValueListenableBuilder<Appearance>(
+      valueListenable: AppState.instance.appearance,
+      builder: (context, look, _) => MaterialApp(
+        title: 'יומנון',
+        debugShowCheckedModeBanner: false,
+        locale: const Locale('he'),
+        supportedLocales: const [Locale('he'), Locale('en')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        theme: look.skin.theme(look.font),
+        builder: (context, child) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: child ?? const SizedBox.shrink(),
         ),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF42A5F5),
-          brightness: Brightness.dark,
+        home: ListenableBuilder(
+          listenable: AppState.instance,
+          builder: (context, _) => AppState.instance.isSetUp
+              ? const Shell()
+              : const OnboardingScreen(),
         ),
-        useMaterial3: true,
-      ),
-      builder: (context, child) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: child ?? const SizedBox.shrink(),
-      ),
-      home: ListenableBuilder(
-        listenable: AppState.instance,
-        builder: (context, _) => AppState.instance.isSetUp
-            ? const Shell()
-            : const OnboardingScreen(),
       ),
     );
   }

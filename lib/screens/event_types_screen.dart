@@ -531,7 +531,7 @@ class _TypeDialogState extends State<_TypeDialog> {
   Widget build(BuildContext context) {
     final t = widget.type;
     return AlertDialog(
-      title: Text(t.id == 0 ? 'סוג אירוע חדש' : 'עריכת סוג'),
+      title: Text(t.name.isEmpty ? 'סוג אירוע חדש' : 'עריכת סוג'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -539,7 +539,7 @@ class _TypeDialogState extends State<_TypeDialog> {
           children: [
             TextField(
               controller: name,
-              autofocus: t.id == 0,
+              autofocus: t.name.isEmpty,
               decoration: const InputDecoration(labelText: 'שם הכפתור'),
             ),
             const SizedBox(height: 12),
@@ -665,14 +665,14 @@ class _FieldDialogState extends State<_FieldDialog> {
   Widget build(BuildContext context) {
     final f = widget.field;
     return AlertDialog(
-      title: Text(f.id == 0 ? 'שאלה חדשה' : 'עריכת שאלה'),
+      title: Text(f.label.isEmpty ? 'שאלה חדשה' : 'עריכת שאלה'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: label,
-              autofocus: f.id == 0,
+              autofocus: f.label.isEmpty,
               decoration: const InputDecoration(
                 labelText: 'השאלה (למשל: מה היה בו?)',
               ),
@@ -706,7 +706,7 @@ class _FieldDialogState extends State<_FieldDialog> {
               value: rememberLast,
               onChanged: (v) => setState(() => rememberLast = v),
             ),
-            if (FieldKind.hasOptions(kind) && f.id == 0)
+            if (FieldKind.hasOptions(kind) && f.label.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(

@@ -198,7 +198,7 @@ class AppDb {
   /// updated_at הגבוה מנצחת. מחזיר כמה שורות השתנו מקומית.
   Future<int> merge(Map<String, dynamic> snap) async {
     if (snap['format'] != 'event-log') {
-      throw const FormatException('זה לא קובץ של יומן אירועים');
+      throw const FormatException('זה לא קובץ גיבוי של יומנון');
     }
     final tables = (snap['tables'] as Map?) ?? {};
     final d = await db;

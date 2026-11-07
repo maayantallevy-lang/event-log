@@ -4,6 +4,7 @@ import 'db/app_db.dart';
 import 'models.dart';
 import 'services/drive_sync.dart';
 import 'services/notifications.dart';
+import 'theme/skins.dart';
 import 'util/ids.dart';
 
 /// מצב גלובלי קל: נושא היומן, סוגי אירועים, תרופות, הגדרות.
@@ -19,6 +20,9 @@ class AppState extends ChangeNotifier {
   List<Med> meds = [];
   Subject? subject;
   int dayStartHour = 7;
+
+  /// סקין ופונט. נפרד מ-notifyListeners כדי שתיעוד אירוע לא יבנה מחדש את כל האפליקציה.
+  final appearance = ValueNotifier<Appearance>(Appearance.initial);
 
   Map<String, EventType> get typeById => {for (final t in types) t.id: t};
   Map<String, Med> get medById => {for (final m in meds) m.id: m};
@@ -38,7 +42,21 @@ class AppState extends ChangeNotifier {
     meds = await db.meds();
     subject = await db.currentSubject();
     dayStartHour = await db.dayStartHour;
+    appearance.value = Appearance(
+      Skin.byKey(await db.getSetting('skin')),
+      AppFont.byKey(await db.getSetting('font')),
+    );
     notifyListeners();
+  }
+
+  Future<void> setSkin(Skin skin) async {
+    await db.setSetting('skin', skin.key);
+    appearance.value = Appearance(skin, appearance.value.font);
+  }
+
+  Future<void> setFont(AppFont font) async {
+    await db.setSetting('font', font.key);
+    appearance.value = Appearance(appearance.value.skin, font);
   }
 
   /// שינוי מקומי: רענון מסכים + סנכרון בעוד כמה שניות.

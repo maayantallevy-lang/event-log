@@ -10,6 +10,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../services/drive_sync.dart';
 import '../util/format.dart';
+import 'appearance_screen.dart';
 import 'event_types_screen.dart';
 import 'meds_screen.dart';
 
@@ -207,7 +208,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(f.path, mimeType: 'application/json')],
-        subject: 'יומן אירועים - גיבוי',
+        subject: 'יומנון - גיבוי',
       ),
     );
   }
@@ -233,7 +234,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(f.path, mimeType: 'text/csv')],
-        subject: 'יומן אירועים - ייצוא',
+        subject: 'יומנון - ייצוא',
       ),
     );
   }
@@ -277,6 +278,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('מראה'),
+            subtitle: Text(
+              '${state.appearance.value.skin.label} · ${state.appearance.value.font.label}',
+            ),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AppearanceScreen()),
+              );
+              if (mounted) setState(() {});
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.wb_twilight),
             title: const Text('תחילת יום'),
             subtitle: Text(
@@ -311,7 +326,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Padding(
             padding: EdgeInsets.all(16),
             child: Text(
-              'יומן אירועים הוא כלי לתיעוד בלבד. הוא אינו מכשיר רפואי ואינו נותן ייעוץ על מינונים או טיפול. בכל שאלה רפואית פנו לרופא/ה.',
+              'יומנון הוא כלי לתיעוד בלבד. הוא אינו מכשיר רפואי ואינו נותן ייעוץ על מינונים או טיפול. בכל שאלה רפואית פנו לרופא/ה.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ),
@@ -377,7 +392,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Text(
               'כל טלפון שמחובר לאותו חשבון גוגל רואה ומעדכן את אותו יומן. '
-              'הנתונים בתיקייה "יומן אירועים - נתונים" בדרייב.',
+              'הנתונים בתיקייה "יומנון - נתונים" בדרייב.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ),

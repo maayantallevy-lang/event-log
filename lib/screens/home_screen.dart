@@ -88,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
         : elapsedText(subj!.startDate!, subj.startKind);
     return Scaffold(
       appBar: AppBar(
-        title: Text(subj?.name ?? 'יומן אירועים'),
+        title: Text(subj?.name ?? 'יומנון'),
         actions: [_syncIndicator()],
         bottom: subtitle == null
             ? null
@@ -299,60 +299,56 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buttonsGrid() {
     final types = state.visibleTypes;
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 10,
-      crossAxisSpacing: 10,
-      childAspectRatio: 1.1,
-      children: [for (final t in types) _bigButton(t), _apptButton()],
-    );
-  }
-
-  Widget _bigButton(EventType t) {
-    final color = Color(t.color);
-    return Material(
-      color: color,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () => _log(t),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(iconFor(t.icon), color: Colors.white, size: 36),
-            const SizedBox(height: 6),
-            Text(
-              t.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+    return ValueListenableBuilder(
+      valueListenable: state.appearance,
+      builder: (context, _, _) => GridView.count(
+        crossAxisCount: 3,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.1,
+        children: [for (final t in types) _bigButton(t), _apptButton()],
       ),
     );
   }
 
-  Widget _apptButton() {
+  Widget _bigButton(EventType t) =>
+      _tile(Color(t.color), iconFor(t.icon), t.name, () => _log(t));
+
+  Widget _apptButton() => _tile(
+    const Color(0xFF26A69A),
+    Icons.event,
+    'תור',
+    () => openAppointment(context, null),
+  );
+
+  /// כפתור גדול. הצבעים נקבעים לפי הסקין שנבחר בהגדרות.
+  Widget _tile(Color color, IconData icon, String label, VoidCallback onTap) {
+    final skin = state.appearance.value.skin;
+    final c = skin.buttonColors(color);
+    final radius = BorderRadius.circular(skin.radius);
     return Material(
-      color: Colors.teal,
-      borderRadius: BorderRadius.circular(18),
+      color: c.background,
+      shape: RoundedRectangleBorder(
+        borderRadius: radius,
+        side: c.border == null
+            ? BorderSide.none
+            : BorderSide(color: c.border!, width: 1.5),
+      ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () => openAppointment(context, null),
-        child: const Column(
+        borderRadius: radius,
+        onTap: onTap,
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.event, color: Colors.white, size: 36),
-            SizedBox(height: 6),
+            Icon(icon, color: c.icon, size: 36),
+            const SizedBox(height: 6),
             Text(
-              'תור',
+              label,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white,
+                color: c.text,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),

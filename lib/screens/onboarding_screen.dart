@@ -117,7 +117,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       children: [
         const SizedBox(height: 24),
         Text(
-          'יומן אירועים',
+          'יומנון',
           style: Theme.of(context).textTheme.headlineMedium,
           textAlign: TextAlign.center,
         ),
