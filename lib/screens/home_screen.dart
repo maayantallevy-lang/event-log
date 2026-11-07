@@ -301,7 +301,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final types = state.visibleTypes;
     return ValueListenableBuilder(
       valueListenable: state.appearance,
-      builder: (context, _, _) => GridView.count(
+      builder: (context, look, child) => GridView.count(
         crossAxisCount: 3,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
