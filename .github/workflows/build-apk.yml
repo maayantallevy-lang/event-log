@@ -58,7 +58,7 @@ jobs:
         id: apk
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //; s/+.*//')
-          NAME="baby-log-v${VERSION}-build${GITHUB_RUN_NUMBER}.apk"
+          NAME="event-log-v${VERSION}-build${GITHUB_RUN_NUMBER}.apk"
           cp build/app/outputs/flutter-apk/app-release.apk "$NAME"
           sha256sum "$NAME" > "$NAME.sha256"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
@@ -67,7 +67,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: baby-log-apk
+          name: event-log-apk
           path: ${{ steps.apk.outputs.name }}
           retention-days: 30
 
