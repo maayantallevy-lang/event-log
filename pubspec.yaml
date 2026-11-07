@@ -1,7 +1,7 @@
-name: baby_log
-description: יומן תינוק - תיעוד מהיר של טיטולים, האכלות, תרופות ותורים.
+name: event_log
+description: יומן אירועים - תיעוד מהיר של כל דבר שדורש מעקב (תינוק, הריון, תרופות, בריאות).
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ^3.5.0
@@ -18,8 +18,10 @@ dependencies:
   flutter_local_notifications: ^19.0.0
   timezone: ^0.10.0
   fl_chart: ^0.70.0
-  share_plus: ^10.1.4
-  shared_preferences: ^2.3.0
+  share_plus: ^11.0.0
+  google_sign_in: ^7.2.0
+  http: ^1.2.2
+  file_picker: ^10.0.0
 
 dev_dependencies:
   flutter_test:

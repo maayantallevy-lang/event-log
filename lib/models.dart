@@ -37,30 +37,87 @@ class BuiltinKind {
   static const appointment = 'appointment';
 }
 
-class Baby {
-  final int id;
-  final String name;
-  final DateTime? birthDate;
-  Baby({required this.id, required this.name, this.birthDate});
+/// כל הטבלאות המסונכרנות. לכל שורה: id (TEXT), updated_at, deleted.
+const syncedTables = [
+  'subjects',
+  'event_types',
+  'event_fields',
+  'field_options',
+  'meds',
+  'events',
+  'appointments',
+  'follow_ups',
+];
 
-  factory Baby.fromMap(Map<String, Object?> m) => Baby(
-    id: m['id'] as int,
+bool _b(Object? v) => (v as int? ?? 0) == 1;
+
+/// איך להציג את הזמן שעבר מתאריך ההתחלה של היומן.
+class StartKind {
+  static const birth = 'birth'; // גיל: ימים / שבועות / חודשים
+  static const pregnancy = 'pregnancy'; // שבוע הריון: 12+3
+  static const start = 'start'; // יום N / שבוע N מתחילת המעקב
+
+  static const all = [birth, pregnancy, start];
+
+  static String label(String? kind) {
+    switch (kind) {
+      case birth:
+        return 'תאריך לידה';
+      case pregnancy:
+        return 'תחילת הריון (וסת אחרונה)';
+      case start:
+        return 'תחילת מעקב';
+    }
+    return 'בלי תאריך';
+  }
+}
+
+/// איך מסכמים שדה מספרי ליום בגרף: סכום (מ"ל, דקות) או ממוצע (חום, משקל).
+class StatAgg {
+  static const sum = 'sum';
+  static const avg = 'avg';
+}
+
+/// נושא היומן: על מי / על מה מתעדים (תינוק, הריון, טיפול...).
+class Subject {
+  final String id;
+  final String name;
+  final DateTime? startDate;
+  final String? startKind;
+  Subject({
+    required this.id,
+    required this.name,
+    this.startDate,
+    this.startKind,
+  });
+
+  factory Subject.fromMap(Map<String, Object?> m) => Subject(
+    id: m['id'] as String,
     name: m['name'] as String,
-    birthDate: m['birth_date'] == null
+    startDate: m['start_date'] == null
         ? null
-        : DateTime.fromMillisecondsSinceEpoch(m['birth_date'] as int),
+        : DateTime.fromMillisecondsSinceEpoch(m['start_date'] as int),
+    startKind: m['start_kind'] as String?,
   );
+
+  Map<String, Object?> toMap() => {
+    'id': id,
+    'name': name,
+    'start_date': startDate?.millisecondsSinceEpoch,
+    'start_kind': startKind,
+  };
 }
 
 class EventType {
-  final int id;
+  final String id;
   String name;
   String icon;
   int color;
   int sortOrder;
   final String? builtinKind;
   double? intervalReminderHours;
-  int? statFieldId;
+  String? statFieldId;
+  String statAgg;
   bool hidden;
   List<EventField> fields;
 
@@ -73,6 +130,7 @@ class EventType {
     this.builtinKind,
     this.intervalReminderHours,
     this.statFieldId,
+    this.statAgg = StatAgg.sum,
     this.hidden = false,
     List<EventField>? fields,
   }) : fields = fields ?? [];
@@ -80,18 +138,20 @@ class EventType {
   bool get isMed => builtinKind == BuiltinKind.med;
 
   factory EventType.fromMap(Map<String, Object?> m) => EventType(
-    id: m['id'] as int,
+    id: m['id'] as String,
     name: m['name'] as String,
     icon: m['icon'] as String,
     color: m['color'] as int,
-    sortOrder: m['sort_order'] as int,
+    sortOrder: m['sort_order'] as int? ?? 0,
     builtinKind: m['builtin_kind'] as String?,
     intervalReminderHours: (m['interval_reminder_hours'] as num?)?.toDouble(),
-    statFieldId: m['stat_field_id'] as int?,
-    hidden: (m['hidden'] as int? ?? 0) == 1,
+    statFieldId: m['stat_field_id'] as String?,
+    statAgg: m['stat_agg'] as String? ?? StatAgg.sum,
+    hidden: _b(m['hidden']),
   );
 
   Map<String, Object?> toMap() => {
+    'id': id,
     'name': name,
     'icon': icon,
     'color': color,
@@ -99,13 +159,14 @@ class EventType {
     'builtin_kind': builtinKind,
     'interval_reminder_hours': intervalReminderHours,
     'stat_field_id': statFieldId,
+    'stat_agg': statAgg,
     'hidden': hidden ? 1 : 0,
   };
 }
 
 class EventField {
-  final int id;
-  final int typeId;
+  final String id;
+  final String typeId;
   String label;
   String kind;
   String? unit;
@@ -127,17 +188,18 @@ class EventField {
   }) : options = options ?? [];
 
   factory EventField.fromMap(Map<String, Object?> m) => EventField(
-    id: m['id'] as int,
-    typeId: m['type_id'] as int,
+    id: m['id'] as String,
+    typeId: m['type_id'] as String,
     label: m['label'] as String,
     kind: m['kind'] as String,
     unit: m['unit'] as String?,
-    required: (m['required'] as int? ?? 0) == 1,
+    required: _b(m['required']),
     rememberLast: (m['remember_last'] as int? ?? 1) == 1,
     sortOrder: m['sort_order'] as int? ?? 0,
   );
 
   Map<String, Object?> toMap() => {
+    'id': id,
     'type_id': typeId,
     'label': label,
     'kind': kind,
@@ -149,8 +211,8 @@ class EventField {
 }
 
 class FieldOption {
-  final int id;
-  final int fieldId;
+  final String id;
+  final String fieldId;
   String label;
   int? color;
   int sortOrder;
@@ -166,15 +228,16 @@ class FieldOption {
   });
 
   factory FieldOption.fromMap(Map<String, Object?> m) => FieldOption(
-    id: m['id'] as int,
-    fieldId: m['field_id'] as int,
+    id: m['id'] as String,
+    fieldId: m['field_id'] as String,
     label: m['label'] as String,
     color: m['color'] as int?,
     sortOrder: m['sort_order'] as int? ?? 0,
-    hidden: (m['hidden'] as int? ?? 0) == 1,
+    hidden: _b(m['hidden']),
   );
 
   Map<String, Object?> toMap() => {
+    'id': id,
     'field_id': fieldId,
     'label': label,
     'color': color,
@@ -183,21 +246,21 @@ class FieldOption {
   };
 }
 
-/// אירוע ביומן. `values` ממופה לפי מזהה שדה (כמחרוזת) -> ערך:
-/// single -> option id (int), multi -> List<int>, number -> double,
+/// אירוע ביומן. `values` ממופה לפי מזהה שדה -> ערך:
+/// single -> מזהה אפשרות (String), multi -> List<String>, number -> double,
 /// duration -> int דקות, text -> String, bool -> bool.
-/// לתרופה (built-in): {'med_id': int, 'dose': double}.
+/// לתרופה (built-in): {'med_id': String, 'dose': double}.
 class LogEvent {
-  final int id;
-  final int babyId;
-  final int typeId;
+  final String id;
+  final String subjectId;
+  final String typeId;
   DateTime timestamp;
   Map<String, dynamic> values;
   String? note;
 
   LogEvent({
     required this.id,
-    required this.babyId,
+    required this.subjectId,
     required this.typeId,
     required this.timestamp,
     Map<String, dynamic>? values,
@@ -205,28 +268,28 @@ class LogEvent {
   }) : values = values ?? {};
 
   factory LogEvent.fromMap(Map<String, Object?> m) => LogEvent(
-    id: m['id'] as int,
-    babyId: m['baby_id'] as int,
-    typeId: m['type_id'] as int,
+    id: m['id'] as String,
+    subjectId: m['subject_id'] as String,
+    typeId: m['type_id'] as String,
     timestamp: DateTime.fromMillisecondsSinceEpoch(m['timestamp'] as int),
-    values: m['values'] == null
+    values: m['vals'] == null
         ? {}
-        : (jsonDecode(m['values'] as String) as Map<String, dynamic>),
+        : (jsonDecode(m['vals'] as String) as Map<String, dynamic>),
     note: m['note'] as String?,
   );
 
   Map<String, Object?> toMap() => {
-    'baby_id': babyId,
+    'id': id,
+    'subject_id': subjectId,
     'type_id': typeId,
     'timestamp': timestamp.millisecondsSinceEpoch,
-    'values': jsonEncode(values),
+    'vals': jsonEncode(values),
     'note': note,
-    'updated_at': DateTime.now().millisecondsSinceEpoch,
   };
 }
 
 class Med {
-  final int id;
+  final String id;
   String name;
   double? defaultDose;
   String? unit;
@@ -243,7 +306,7 @@ class Med {
   });
 
   factory Med.fromMap(Map<String, Object?> m) => Med(
-    id: m['id'] as int,
+    id: m['id'] as String,
     name: m['name'] as String,
     defaultDose: (m['default_dose'] as num?)?.toDouble(),
     unit: m['unit'] as String?,
@@ -252,6 +315,7 @@ class Med {
   );
 
   Map<String, Object?> toMap() => {
+    'id': id,
     'name': name,
     'default_dose': defaultDose,
     'unit': unit,
@@ -261,19 +325,12 @@ class Med {
 }
 
 class AppointmentCategory {
-  static const all = [
-    'טיפת חלב',
-    'רופא ילדים',
-    'קופת חולים',
-    'בדיקה',
-    'חיסון',
-    'אחר',
-  ];
+  static const all = ['רופא', 'בדיקה', 'טיפול', 'חיסון', 'אחר'];
 }
 
 class Appointment {
-  final int id;
-  final int babyId;
+  final String id;
+  final String subjectId;
   String title;
   String category;
   DateTime scheduledAt;
@@ -286,7 +343,7 @@ class Appointment {
 
   Appointment({
     required this.id,
-    required this.babyId,
+    required this.subjectId,
     required this.title,
     required this.category,
     required this.scheduledAt,
@@ -299,8 +356,8 @@ class Appointment {
   }) : remindBeforeMin = remindBeforeMin ?? [];
 
   factory Appointment.fromMap(Map<String, Object?> m) => Appointment(
-    id: m['id'] as int,
-    babyId: m['baby_id'] as int,
+    id: m['id'] as String,
+    subjectId: m['subject_id'] as String,
     title: m['title'] as String,
     category: m['category'] as String,
     scheduledAt: DateTime.fromMillisecondsSinceEpoch(m['scheduled_at'] as int),
@@ -312,12 +369,13 @@ class Appointment {
         .toList(),
     note: m['note'] as String?,
     summary: m['summary'] as String?,
-    done: (m['done'] as int? ?? 0) == 1,
-    followUpAsked: (m['follow_up_asked'] as int? ?? 0) == 1,
+    done: _b(m['done']),
+    followUpAsked: _b(m['follow_up_asked']),
   );
 
   Map<String, Object?> toMap() => {
-    'baby_id': babyId,
+    'id': id,
+    'subject_id': subjectId,
     'title': title,
     'category': category,
     'scheduled_at': scheduledAt.millisecondsSinceEpoch,
@@ -337,8 +395,8 @@ class FollowUpKind {
 }
 
 class FollowUp {
-  final int id;
-  final int? appointmentId;
+  final String id;
+  final String? appointmentId;
   final String kind;
   String title;
   final DateTime createdAt;
@@ -358,8 +416,8 @@ class FollowUp {
   bool get isOpen => doneAt == null;
 
   factory FollowUp.fromMap(Map<String, Object?> m) => FollowUp(
-    id: m['id'] as int,
-    appointmentId: m['appointment_id'] as int?,
+    id: m['id'] as String,
+    appointmentId: m['appointment_id'] as String?,
     kind: m['kind'] as String,
     title: m['title'] as String,
     createdAt: DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int),
@@ -370,6 +428,7 @@ class FollowUp {
   );
 
   Map<String, Object?> toMap() => {
+    'id': id,
     'appointment_id': appointmentId,
     'kind': kind,
     'title': title,

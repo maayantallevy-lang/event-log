@@ -9,6 +9,7 @@ import '../util/format.dart';
 import '../widgets/log_sheet.dart';
 import 'appointment_screen.dart';
 import 'follow_up_sheet.dart';
+import '../services/drive_sync.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,7 +20,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final state = AppState.instance;
-  Map<int, LogEvent> lastByType = {};
+  Map<String, LogEvent> lastByType = {};
   List<LogEvent> recent = [];
   List<Appointment> upcoming = [];
   List<Appointment> awaitingFollowUp = [];
@@ -45,7 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _load() async {
     final db = state.db;
-    final map = <int, LogEvent>{};
+    final map = <String, LogEvent>{};
     for (final t in state.visibleTypes) {
       final e = await db.lastEventOfType(t.id);
       if (e != null) map[t.id] = e;
@@ -81,11 +82,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final baby = state.baby;
-    final subtitle = baby?.birthDate == null ? null : ageText(baby!.birthDate!);
+    final subj = state.subject;
+    final subtitle = subj?.startDate == null
+        ? null
+        : elapsedText(subj!.startDate!, subj.startKind);
     return Scaffold(
       appBar: AppBar(
-        title: Text(baby?.name ?? 'יומן תינוק'),
+        title: Text(subj?.name ?? 'יומן אירועים'),
+        actions: [_syncIndicator()],
         bottom: subtitle == null
             ? null
             : PreferredSize(
@@ -117,6 +121,34 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// אייקון קטן בכותרת: מצב הסנכרון לדרייב (רק במצב דרייב).
+  Widget _syncIndicator() {
+    return ValueListenableBuilder<SyncStatus>(
+      valueListenable: state.sync.status,
+      builder: (context, st, _) {
+        if (st.account == null) return const SizedBox.shrink();
+        final icon = st.syncing
+            ? Icons.cloud_sync
+            : (st.error != null ? Icons.cloud_off : Icons.cloud_done);
+        return IconButton(
+          tooltip:
+              st.error ??
+              (st.lastSync == null
+                  ? 'מסונכרן לדרייב'
+                  : 'סונכרן ${fmtTime(st.lastSync!)}'),
+          icon: Icon(icon, color: st.error != null ? Colors.orange : null),
+          onPressed: () async {
+            await state.sync.sync();
+            final err = state.sync.status.value.error;
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(err ?? 'מסונכרן')));
+          },
+        );
+      },
+    );
+  }
+
   Widget _statusCard() {
     final types = state.visibleTypes.where((t) => lastByType[t.id] != null);
     final medById = state.medById;
@@ -139,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _statusLine(EventType t, LogEvent e, Map<int, Med> medById) {
+  Widget _statusLine(EventType t, LogEvent e, Map<String, Med> medById) {
     final details = describeValues(t, e.values, medById);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -371,16 +403,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           content: const Text('נמחק'),
                           action: SnackBarAction(
                             label: 'בטל',
-                            onPressed: () => state.saveEvent(
-                              LogEvent(
-                                id: 0,
-                                babyId: e.babyId,
-                                typeId: e.typeId,
-                                timestamp: e.timestamp,
-                                values: e.values,
-                                note: e.note,
-                              ),
-                            ),
+                            onPressed: () => state.undoDelete(e),
                           ),
                         ),
                       );

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../models.dart';
 import '../util/format.dart';
+import '../util/ids.dart';
 
 class MedsScreen extends StatefulWidget {
   const MedsScreen({super.key});
@@ -36,12 +37,8 @@ class _MedsScreenState extends State<MedsScreen> {
       builder: (_) => _MedDialog(existing: existing),
     );
     if (result == null) return;
-    if (existing == null) {
-      await state.db.insertMed(result);
-    } else {
-      await state.db.updateMed(result);
-    }
-    await state.load();
+    await state.db.saveMed(result);
+    await state.reloadStructure();
   }
 
   @override
@@ -69,8 +66,8 @@ class _MedsScreenState extends State<MedsScreen> {
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline),
                       onPressed: () async {
-                        await state.db.deleteMed(m.id);
-                        await state.load();
+                        await state.db.deactivateMed(m);
+                        await state.reloadStructure();
                       },
                     ),
                   ),
@@ -183,7 +180,7 @@ class _MedDialogState extends State<_MedDialog> {
             Navigator.pop(
               context,
               Med(
-                id: widget.existing?.id ?? 0,
+                id: widget.existing?.id ?? newId(),
                 name: n,
                 defaultDose: double.tryParse(dose.text.trim()),
                 unit: unit,

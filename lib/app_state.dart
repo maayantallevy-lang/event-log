@@ -2,24 +2,29 @@ import 'package:flutter/foundation.dart';
 
 import 'db/app_db.dart';
 import 'models.dart';
+import 'services/drive_sync.dart';
 import 'services/notifications.dart';
+import 'util/ids.dart';
 
-/// מצב גלובלי קל: סוגי אירועים, תרופות, תינוק, הגדרות.
-/// כל שינוי בנתונים קורא ל-[bump] כדי שהמסכים יתרעננו.
+/// מצב גלובלי קל: נושא היומן, סוגי אירועים, תרופות, הגדרות.
+/// כל שינוי בנתונים: כתיבה למסד, עדכון תזכורות, בקשת סנכרון, רענון מסכים.
 class AppState extends ChangeNotifier {
   AppState._();
   static final AppState instance = AppState._();
 
   final db = AppDb.instance;
+  final sync = DriveSync.instance;
 
   List<EventType> types = [];
   List<Med> meds = [];
-  Baby? baby;
+  Subject? subject;
   int dayStartHour = 7;
-  int revision = 0;
 
-  Map<int, EventType> get typeById => {for (final t in types) t.id: t};
-  Map<int, Med> get medById => {for (final m in meds) m.id: m};
+  Map<String, EventType> get typeById => {for (final t in types) t.id: t};
+  Map<String, Med> get medById => {for (final m in meds) m.id: m};
+  List<EventType> get visibleTypes => types.where((t) => !t.hidden).toList();
+  bool get isSetUp => subject != null;
+  String get subjectId => subject?.id ?? 'none';
 
   EventType? get medType {
     for (final t in types) {
@@ -29,51 +34,78 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> load() async {
-    types = await db.eventTypes(includeHidden: true);
-    meds = await db.meds(activeOnly: false);
-    baby = await db.currentBaby();
+    types = await db.eventTypes();
+    meds = await db.meds();
+    subject = await db.currentSubject();
     dayStartHour = await db.dayStartHour;
-    revision++;
     notifyListeners();
   }
 
-  /// לאחר שינוי באירועים (לא במבנה) - רק רענון מסכים.
-  void bump() {
-    revision++;
+  /// שינוי מקומי: רענון מסכים + סנכרון בעוד כמה שניות.
+  void _changed() {
     notifyListeners();
+    sync.requestSync();
   }
 
-  List<EventType> get visibleTypes => types.where((t) => !t.hidden).toList();
+  /// אחרי מיזוג מהדרייב: טעינה מחדש ותזמון מחדש של כל התזכורות.
+  Future<void> onRemoteChanges() async {
+    await load();
+    await rescheduleEverything();
+  }
 
-  // ---------- פעולות שמשלבות DB + תזכורות ----------
-
-  Future<int> saveEvent(LogEvent e) async {
-    int id;
-    if (e.id == 0) {
-      id = await db.insertEvent(e);
-    } else {
-      await db.updateEvent(e);
-      id = e.id;
+  Future<void> rescheduleEverything() async {
+    for (final t in types) {
+      await _afterEventChange(t.id);
     }
+    await Notifications.instance.rescheduleAll();
+  }
+
+  // ---------- מבנה (סוגים, שדות, תרופות, נושא) ----------
+
+  Future<void> reloadStructure() async {
+    await load();
+    sync.requestSync();
+  }
+
+  Future<void> saveSubject(Subject s) async {
+    await db.saveSubject(s);
+    await reloadStructure();
+  }
+
+  // ---------- אירועים ----------
+
+  LogEvent newEvent(String typeId, {Map<String, dynamic>? values}) => LogEvent(
+    id: newId(),
+    subjectId: subjectId,
+    typeId: typeId,
+    timestamp: DateTime.now(),
+    values: values,
+  );
+
+  Future<void> saveEvent(LogEvent e) async {
+    await db.saveEvent(e);
     await _afterEventChange(e.typeId);
-    bump();
-    return id;
+    _changed();
   }
 
   Future<void> deleteEvent(LogEvent e) async {
     await db.deleteEvent(e.id);
     await _afterEventChange(e.typeId);
-    bump();
+    _changed();
   }
 
-  Future<void> _afterEventChange(int typeId) async {
+  Future<void> undoDelete(LogEvent e) async {
+    await db.restoreEvent(e.id);
+    await _afterEventChange(e.typeId);
+    _changed();
+  }
+
+  Future<void> _afterEventChange(String typeId) async {
     final t = typeById[typeId];
     if (t == null) return;
-    final last = await db.lastEventOfType(typeId);
     if (t.isMed) {
-      // לכל תרופה פעילה - תזכורת לפי המנה האחרונה שלה.
-      for (final m in meds.where((m) => m.active)) {
-        final lastMed = await db.lastMedEvent(m.id);
+      for (final m in meds) {
+        final lastMed = m.active ? await db.lastMedEvent(m.id) : null;
         if (lastMed != null) {
           await Notifications.instance.scheduleMedReminder(
             m,
@@ -83,49 +115,46 @@ class AppState extends ChangeNotifier {
           await Notifications.instance.cancel(Notifications.medId(m.id));
         }
       }
-    } else if (last != null) {
+      return;
+    }
+    final last = t.hidden ? null : await db.lastEventOfType(typeId);
+    if (last != null) {
       await Notifications.instance.scheduleTypeReminder(t, last.timestamp);
     } else {
       await Notifications.instance.cancel(Notifications.typeId(t.id));
     }
   }
 
+  // ---------- תורים ומעקב ----------
+
   Future<void> saveAppointment(Appointment a) async {
-    if (a.id == 0) {
-      final id = await db.insertAppointment(a);
-      final saved = await db.appointment(id);
-      if (saved != null)
-        await Notifications.instance.scheduleAppointment(saved);
-    } else {
-      await db.updateAppointment(a);
-      await Notifications.instance.scheduleAppointment(a);
-    }
-    bump();
+    await db.saveAppointment(a);
+    await Notifications.instance.scheduleAppointment(a);
+    _changed();
   }
 
   Future<void> deleteAppointment(Appointment a) async {
     await Notifications.instance.cancelAppointment(a);
     await db.deleteAppointment(a.id);
-    bump();
+    _changed();
   }
 
   Future<void> addFollowUp(FollowUp f) async {
-    final id = await db.insertFollowUp(f);
-    final saved = await db.followUp(id);
-    if (saved != null) await Notifications.instance.scheduleFollowUp(saved);
-    bump();
+    await db.saveFollowUp(f);
+    await Notifications.instance.scheduleFollowUp(f);
+    _changed();
   }
 
   Future<void> completeFollowUp(FollowUp f) async {
     f.doneAt = DateTime.now();
-    await db.updateFollowUp(f);
+    await db.saveFollowUp(f);
     await Notifications.instance.cancel(Notifications.followUpId(f.id));
-    bump();
+    _changed();
   }
 
   Future<void> deleteFollowUp(FollowUp f) async {
     await Notifications.instance.cancel(Notifications.followUpId(f.id));
     await db.deleteFollowUp(f.id);
-    bump();
+    _changed();
   }
 }

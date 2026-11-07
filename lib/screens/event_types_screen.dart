@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../app_state.dart';
 import '../models.dart';
+import '../db/templates.dart';
 import '../util/format.dart';
+import '../util/ids.dart';
 
 /// רשימת סוגי האירועים (הכפתורים): סדר, הוספה, עריכה, הסתרה.
 class EventTypesScreen extends StatefulWidget {
@@ -33,7 +35,7 @@ class _EventTypesScreenState extends State<EventTypesScreen> {
 
   Future<void> _addType() async {
     final t = EventType(
-      id: 0,
+      id: newId(),
       name: '',
       icon: 'star',
       color: palette[state.types.length % palette.length],
@@ -44,11 +46,34 @@ class _EventTypesScreenState extends State<EventTypesScreen> {
       builder: (_) => _TypeDialog(type: t),
     );
     if (saved == null) return;
-    final id = await state.db.insertEventType(saved);
-    await state.load();
+    await state.db.saveEventType(saved);
+    await state.reloadStructure();
     if (!mounted) return;
-    final full = state.typeById[id];
+    final full = state.typeById[saved.id];
     if (full != null) _open(full);
+  }
+
+  /// הוספת כל הכפתורים של תבנית (סוג שכבר קיים לא משוכפל).
+  Future<void> _addFromTemplate() async {
+    final tpl = await showDialog<Template>(
+      context: context,
+      builder: (c) => SimpleDialog(
+        title: const Text('הוספת כפתורים מתבנית'),
+        children: [
+          for (final t in templates)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(c, t),
+              child: ListTile(
+                title: Text(t.title),
+                subtitle: Text(t.description),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (tpl == null) return;
+    await state.db.addTemplateTypes(tpl);
+    await state.reloadStructure();
   }
 
   void _open(EventType t) {
@@ -62,15 +87,24 @@ class _EventTypesScreenState extends State<EventTypesScreen> {
   Widget build(BuildContext context) {
     final types = state.types;
     return Scaffold(
-      appBar: AppBar(title: const Text('סוגי אירועים')),
+      appBar: AppBar(
+        title: const Text('סוגי אירועים'),
+        actions: [
+          IconButton(
+            tooltip: 'הוספה מתבנית',
+            onPressed: _addFromTemplate,
+            icon: const Icon(Icons.library_add),
+          ),
+        ],
+      ),
       body: ReorderableListView(
         onReorder: (oldIndex, newIndex) async {
           if (newIndex > oldIndex) newIndex--;
-          final ids = types.map((t) => t.id).toList();
-          final moved = ids.removeAt(oldIndex);
-          ids.insert(newIndex, moved);
-          await state.db.reorderEventTypes(ids);
-          await state.load();
+          final list = [...types];
+          final moved = list.removeAt(oldIndex);
+          list.insert(newIndex, moved);
+          await state.db.reorderEventTypes(list);
+          await state.reloadStructure();
         },
         children: [
           for (final t in types)
@@ -106,7 +140,7 @@ class _EventTypesScreenState extends State<EventTypesScreen> {
 
 /// עריכת סוג אירוע אחד: פרטי הכפתור + רשימת השאלות.
 class EventTypeEditScreen extends StatefulWidget {
-  final int typeId;
+  final String typeId;
   const EventTypeEditScreen({super.key, required this.typeId});
 
   @override
@@ -142,16 +176,16 @@ class _EventTypeEditScreenState extends State<EventTypeEditScreen> {
       builder: (_) => _TypeDialog(type: t),
     );
     if (saved == null) return;
-    await state.db.updateEventType(saved);
-    await state.load();
+    await state.db.saveEventType(saved);
+    await state.reloadStructure();
   }
 
   Future<void> _toggleHidden() async {
     final t = type;
     if (t == null) return;
     t.hidden = !t.hidden;
-    await state.db.updateEventType(t);
-    await state.load();
+    await state.db.saveEventType(t);
+    await state.reloadStructure();
   }
 
   Future<void> _delete() async {
@@ -177,8 +211,8 @@ class _EventTypeEditScreenState extends State<EventTypeEditScreen> {
       ),
     );
     if (ok != true) return;
-    await state.db.deleteEventType(t.id);
-    await state.load();
+    await state.db.deleteEventType(t);
+    await state.reloadStructure();
     if (mounted) Navigator.pop(context);
   }
 
@@ -186,7 +220,7 @@ class _EventTypeEditScreenState extends State<EventTypeEditScreen> {
     final t = type;
     if (t == null) return;
     final f = EventField(
-      id: 0,
+      id: newId(),
       typeId: t.id,
       label: '',
       kind: FieldKind.single,
@@ -197,8 +231,8 @@ class _EventTypeEditScreenState extends State<EventTypeEditScreen> {
       builder: (_) => _FieldDialog(field: f),
     );
     if (saved == null) return;
-    await state.db.insertField(saved);
-    await state.load();
+    await state.db.saveField(saved);
+    await state.reloadStructure();
   }
 
   Future<void> _editField(EventField f) async {
@@ -207,32 +241,32 @@ class _EventTypeEditScreenState extends State<EventTypeEditScreen> {
       builder: (_) => _FieldDialog(field: f),
     );
     if (saved == null) return;
-    await state.db.updateField(saved);
-    await state.load();
+    await state.db.saveField(saved);
+    await state.reloadStructure();
   }
 
   Future<void> _deleteField(EventField f) async {
-    await state.db.deleteField(f.id);
+    await state.db.deleteField(f);
     final t = type;
     if (t != null && t.statFieldId == f.id) {
       t.statFieldId = null;
-      await state.db.updateEventType(t);
+      await state.db.saveEventType(t);
     }
-    await state.load();
+    await state.reloadStructure();
   }
 
   Future<void> _addOption(EventField f) async {
     final label = await _askText('אפשרות חדשה', '');
     if (label == null || label.trim().isEmpty) return;
-    await state.db.insertOption(
+    await state.db.saveOption(
       FieldOption(
-        id: 0,
+        id: newId(),
         fieldId: f.id,
         label: label.trim(),
         sortOrder: f.options.length,
       ),
     );
-    await state.load();
+    await state.reloadStructure();
   }
 
   Future<void> _editOption(FieldOption o) async {
@@ -242,9 +276,9 @@ class _EventTypeEditScreenState extends State<EventTypeEditScreen> {
       await state.db.deleteOption(o.id);
     } else {
       o.label = label.trim();
-      await state.db.updateOption(o);
+      await state.db.saveOption(o);
     }
-    await state.load();
+    await state.reloadStructure();
   }
 
   Future<String?> _askText(String title, String initial) {
@@ -273,12 +307,20 @@ class _EventTypeEditScreenState extends State<EventTypeEditScreen> {
     );
   }
 
-  Future<void> _setStatField(int? fieldId) async {
+  Future<void> _setStatField(String? fieldId) async {
     final t = type;
     if (t == null) return;
     t.statFieldId = fieldId;
-    await state.db.updateEventType(t);
-    await state.load();
+    await state.db.saveEventType(t);
+    await state.reloadStructure();
+  }
+
+  Future<void> _setStatAgg(String agg) async {
+    final t = type;
+    if (t == null) return;
+    t.statAgg = agg;
+    await state.db.saveEventType(t);
+    await state.reloadStructure();
   }
 
   @override
@@ -351,21 +393,39 @@ class _EventTypeEditScreenState extends State<EventTypeEditScreen> {
               ListTile(
                 title: const Text('מה להציג בגרף ובסיכום?'),
                 subtitle: const Text('שדה מספרי שסוכמים אותו ליום'),
-                trailing: DropdownButton<int?>(
+                trailing: DropdownButton<String?>(
                   value: numberFields.any((f) => f.id == t.statFieldId)
                       ? t.statFieldId
                       : null,
                   items: [
-                    const DropdownMenuItem<int?>(
+                    const DropdownMenuItem<String?>(
                       value: null,
                       child: Text('רק ספירה'),
                     ),
                     for (final f in numberFields)
-                      DropdownMenuItem<int?>(value: f.id, child: Text(f.label)),
+                      DropdownMenuItem<String?>(
+                        value: f.id,
+                        child: Text(f.label),
+                      ),
                   ],
                   onChanged: _setStatField,
                 ),
               ),
+              if (t.statFieldId != null)
+                ListTile(
+                  title: const Text('איך לסכם ליום?'),
+                  subtitle: const Text(
+                    'סכום - למ"ל או דקות; ממוצע - לחום, משקל, לחץ דם',
+                  ),
+                  trailing: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: StatAgg.sum, label: Text('סכום')),
+                      ButtonSegment(value: StatAgg.avg, label: Text('ממוצע')),
+                    ],
+                    selected: {t.statAgg},
+                    onSelectionChanged: (s) => _setStatAgg(s.first),
+                  ),
+                ),
             ],
           ],
         ],
@@ -554,6 +614,7 @@ class _TypeDialogState extends State<_TypeDialog> {
                 builtinKind: t.builtinKind,
                 intervalReminderHours: double.tryParse(interval.text.trim()),
                 statFieldId: t.statFieldId,
+                statAgg: t.statAgg,
                 hidden: t.hidden,
                 fields: t.fields,
               ),

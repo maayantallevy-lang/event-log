@@ -73,8 +73,8 @@ class _LogSheetState extends State<_LogSheet> {
         }
       } else if (last != null) {
         for (final f in type.fields) {
-          if (f.rememberLast && last.values.containsKey(f.id.toString())) {
-            values[f.id.toString()] = last.values[f.id.toString()];
+          if (f.rememberLast && last.values.containsKey(f.id)) {
+            values[f.id] = last.values[f.id];
           }
         }
       }
@@ -83,8 +83,8 @@ class _LogSheetState extends State<_LogSheet> {
       if (f.kind == FieldKind.text ||
           f.kind == FieldKind.number ||
           f.kind == FieldKind.duration) {
-        final v = values[f.id.toString()];
-        textCtrls[f.id.toString()] = TextEditingController(
+        final v = values[f.id];
+        textCtrls[f.id] = TextEditingController(
           text: v == null ? '' : (v is num ? fmtNum(v) : v.toString()),
         );
       }
@@ -130,7 +130,7 @@ class _LogSheetState extends State<_LogSheet> {
     }
     for (final f in type.fields) {
       if (!f.required) continue;
-      final v = values[f.id.toString()];
+      final v = values[f.id];
       if (v == null ||
           (v is List && v.isEmpty) ||
           (v is String && v.trim().isEmpty)) {
@@ -143,23 +143,21 @@ class _LogSheetState extends State<_LogSheet> {
   Future<void> _save() async {
     // קריאת שדות טקסט/מספר מהבקרים.
     for (final f in type.fields) {
-      final c = textCtrls[f.id.toString()];
+      final c = textCtrls[f.id];
       if (c == null) continue;
       final raw = c.text.trim();
       if (f.kind == FieldKind.text) {
         if (raw.isEmpty) {
-          values.remove(f.id.toString());
+          values.remove(f.id);
         } else {
-          values[f.id.toString()] = raw;
+          values[f.id] = raw;
         }
       } else {
         final n = double.tryParse(raw.replaceAll(',', '.'));
         if (n == null) {
-          values.remove(f.id.toString());
+          values.remove(f.id);
         } else {
-          values[f.id.toString()] = f.kind == FieldKind.duration
-              ? n.round()
-              : n;
+          values[f.id] = f.kind == FieldKind.duration ? n.round() : n;
         }
       }
     }
@@ -177,26 +175,14 @@ class _LogSheetState extends State<_LogSheet> {
       return;
     }
     setState(() => saving = true);
-    final e = LogEvent(
-      id: widget.existing?.id ?? 0,
-      babyId: state.baby?.id ?? 1,
-      typeId: type.id,
-      timestamp: when,
-      values: values,
-      note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
-    );
-    final id = await state.saveEvent(e);
+    final ex = widget.existing;
+    final e = ex == null ? state.newEvent(type.id) : ex;
+    e.timestamp = when;
+    e.values = values;
+    e.note = noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim();
+    await state.saveEvent(e);
     if (!mounted) return;
-    Navigator.of(context).pop(
-      LogEvent(
-        id: id,
-        babyId: e.babyId,
-        typeId: e.typeId,
-        timestamp: e.timestamp,
-        values: e.values,
-        note: e.note,
-      ),
-    );
+    Navigator.of(context).pop(e);
   }
 
   @override
@@ -334,7 +320,7 @@ class _LogSheetState extends State<_LogSheet> {
   );
 
   Widget _fieldWidget(EventField f) {
-    final key = f.id.toString();
+    final key = f.id;
     switch (f.kind) {
       case FieldKind.single:
         return Column(
@@ -365,7 +351,9 @@ class _LogSheetState extends State<_LogSheet> {
           ],
         );
       case FieldKind.multi:
-        final sel = ((values[key] as List?) ?? const []).cast<int>().toSet();
+        final sel = ((values[key] as List?) ?? const [])
+            .map((x) => x.toString())
+            .toSet();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

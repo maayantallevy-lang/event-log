@@ -60,15 +60,34 @@ String fmtNum(num v) {
   return v.toStringAsFixed(1);
 }
 
-/// גיל בימים/שבועות/חודשים.
-String ageText(DateTime birth, [DateTime? now]) {
+/// כמה זמן עבר מתאריך ההתחלה של היומן, לפי סוג ההתחלה.
+/// לידה: "גיל 5 ימים" / "גיל 3 שבועות ו-2 ימים" / "גיל 4 חודשים".
+/// הריון: "שבוע 12+3" (מהוסת האחרונה). תחילת מעקב: "יום 9" / "שבוע 6".
+String elapsedText(DateTime start, String? kind, [DateTime? now]) {
   final n = now ?? DateTime.now();
-  final days = n.difference(birth).inDays;
+  final days = DateTime(
+    n.year,
+    n.month,
+    n.day,
+  ).difference(DateTime(start.year, start.month, start.day)).inDays;
   if (days < 0) return '';
-  if (days < 14) return 'בן/בת $days ימים';
-  if (days < 90) return 'בן/בת ${days ~/ 7} שבועות ו-${days % 7} ימים';
-  final months = (days / 30.44).floor();
-  return 'בן/בת $months חודשים';
+  switch (kind) {
+    case 'birth':
+      if (days < 14) return 'גיל $days ימים';
+      if (days < 90) {
+        final d = days % 7;
+        return 'גיל ${days ~/ 7} שבועות${d == 0 ? '' : ' ו-$d ימים'}';
+      }
+      if (days < 730) return 'גיל ${(days / 30.44).floor()} חודשים';
+      return 'גיל ${(days / 365.25).toStringAsFixed(1)} שנים';
+    case 'pregnancy':
+      final w = days ~/ 7;
+      final tri = w < 14 ? 1 : (w < 28 ? 2 : 3);
+      return 'שבוע $w+${days % 7} · טרימסטר $tri';
+    default:
+      if (days < 14) return 'יום ${days + 1}';
+      return 'שבוע ${days ~/ 7 + 1}';
+  }
 }
 
 /// אייקונים קבועים לבחירה (שם -> אייקון). שם נשמר במסד.
@@ -93,6 +112,15 @@ const Map<String, IconData> appIcons = {
   'smile': Icons.sentiment_satisfied,
   'cry': Icons.sentiment_very_dissatisfied,
   'poop': Icons.cloud,
+  'heart': Icons.favorite_border,
+  'sick': Icons.sick,
+  'baby': Icons.child_friendly,
+  'drop': Icons.bloodtype,
+  'run': Icons.directions_run,
+  'water': Icons.local_cafe,
+  'pill': Icons.medication_liquid,
+  'mood': Icons.mood,
+  'calendar': Icons.event_note,
 };
 
 IconData iconFor(String name) => appIcons[name] ?? Icons.circle;

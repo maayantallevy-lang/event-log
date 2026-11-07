@@ -16,12 +16,15 @@ class _DayStat {
   final DateTime day;
   int count = 0;
   double sum = 0;
+  int n = 0; // כמה ערכים מספריים נספרו (לממוצע)
   _DayStat(this.day);
+
+  double value(String agg) => agg == StatAgg.avg ? (n == 0 ? 0 : sum / n) : sum;
 }
 
 class _StatsScreenState extends State<StatsScreen> {
   final state = AppState.instance;
-  int? typeId;
+  String? typeId;
   int days = 7;
   List<_DayStat> stats = [];
   double avgGapMinutes = 0;
@@ -88,6 +91,7 @@ class _StatsScreenState extends State<StatsScreen> {
         final v = e.values[key];
         if (v is num) {
           s.sum += v.toDouble();
+          s.n++;
           sumAmount += v.toDouble();
           amountCount++;
         }
@@ -95,6 +99,7 @@ class _StatsScreenState extends State<StatsScreen> {
         final v = e.values['dose'];
         if (v is num) {
           s.sum += v.toDouble();
+          s.n++;
           sumAmount += v.toDouble();
           amountCount++;
         }
@@ -171,15 +176,15 @@ class _StatsScreenState extends State<StatsScreen> {
                   _summaryCard(t),
                   const SizedBox(height: 12),
                   _chartCard(
-                    '${t.name} ליום (${days} ימים אחרונים)',
+                    '${t.name} ליום ($days ימים אחרונים)',
                     stats.map((s) => s.count.toDouble()).toList(),
                     Color(t.color),
                   ),
                   if (statField != null || t.isMed) ...[
                     const SizedBox(height: 12),
                     _chartCard(
-                      'סה"כ ${statField?.label ?? 'מינון'} ליום${statField?.unit == null ? '' : ' (${statField!.unit})'}',
-                      stats.map((s) => s.sum).toList(),
+                      '${t.statAgg == StatAgg.avg ? 'ממוצע' : 'סה"כ'} ${statField?.label ?? 'מינון'} ליום${statField?.unit == null ? '' : ' (${statField!.unit})'}',
+                      stats.map((s) => s.value(t.statAgg)).toList(),
                       Color(t.color).withAlpha(170),
                     ),
                   ],

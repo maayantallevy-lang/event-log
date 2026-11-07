@@ -25,7 +25,8 @@ class _Item {
 
 class _LogScreenState extends State<LogScreen> {
   final state = AppState.instance;
-  int? filterType; // null = הכל, -1 = תורים
+  String? filterType; // null = הכל, _appts = תורים
+  static const _appts = '__appointments';
   int rangeDays = 3; // 1, 3, 7, 0 = הכל
   List<_Item> items = [];
   bool loading = true;
@@ -52,14 +53,14 @@ class _LogScreenState extends State<LogScreen> {
             state.dayStartHour,
           ).subtract(Duration(days: rangeDays - 1));
     final list = <_Item>[];
-    if (filterType == null || filterType! > 0) {
+    if (filterType == null || filterType != _appts) {
       final evs = await state.db.events(
         from: from,
         typeIds: filterType == null ? null : {filterType!},
       );
       list.addAll(evs.map(_Item.event));
     }
-    if (filterType == null || filterType == -1) {
+    if (filterType == null || filterType == _appts) {
       final appts = await state.db.appointments(from: from);
       list.addAll(appts.map(_Item.appt));
     }
@@ -139,9 +140,9 @@ class _LogScreenState extends State<LogScreen> {
           ChoiceChip(
             avatar: const Icon(Icons.event, size: 18, color: Colors.teal),
             label: const Text('תורים'),
-            selected: filterType == -1,
+            selected: filterType == _appts,
             onSelected: (_) {
-              filterType = -1;
+              filterType = _appts;
               _load();
             },
           ),
@@ -156,7 +157,7 @@ class _LogScreenState extends State<LogScreen> {
     final medById = state.medById;
     final rows = <Widget>[];
     DateTime? currentDay;
-    final counts = <DateTime, Map<int, int>>{};
+    final counts = <DateTime, Map<String, int>>{};
     for (final it in items) {
       final day = logicalDayStart(it.at, state.dayStartHour);
       if (it.event != null) {
@@ -225,7 +226,7 @@ class _LogScreenState extends State<LogScreen> {
     );
   }
 
-  Widget _eventTile(LogEvent e, EventType t, Map<int, Med> medById) {
+  Widget _eventTile(LogEvent e, EventType t, Map<String, Med> medById) {
     final details = describeValues(t, e.values, medById);
     return Dismissible(
       key: ValueKey('ev${e.id}'),
@@ -244,16 +245,7 @@ class _LogScreenState extends State<LogScreen> {
             content: Text('נמחק: ${t.name}'),
             action: SnackBarAction(
               label: 'בטל',
-              onPressed: () => state.saveEvent(
-                LogEvent(
-                  id: 0,
-                  babyId: e.babyId,
-                  typeId: e.typeId,
-                  timestamp: e.timestamp,
-                  values: e.values,
-                  note: e.note,
-                ),
-              ),
+              onPressed: () => state.undoDelete(e),
             ),
           ),
         );

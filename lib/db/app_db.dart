@@ -4,92 +4,105 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../models.dart';
+import '../util/ids.dart';
+import 'templates.dart';
 
-/// שכבת הנתונים: SQLite דרך sqflite, SQL גולמי, בלי code-gen.
+/// שכבת הנתונים: SQLite דרך sqflite, SQL גולמי.
+///
+/// סכימה v2 (D-11): לכל טבלה מסונכרנת יש id טקסטואלי גלובלי, updated_at
+/// ו-deleted. מחיקה = סימון deleted=1 (tombstone) כדי שתעבור בסנכרון.
+/// כל כתיבה מקומית מעדכנת updated_at; מיזוג מרחוק שומר את updated_at שהגיע.
 class AppDb {
   AppDb._();
   static final AppDb instance = AppDb._();
 
+  static const schemaVersion = 2;
+
   Database? _db;
+  final Map<String, Set<String>> _columns = {};
 
   Future<Database> get db async {
     if (_db != null) return _db!;
     final dir = await getDatabasesPath();
     _db = await openDatabase(
-      p.join(dir, 'baby_log.db'),
-      version: 1,
-      onConfigure: (d) => d.execute('PRAGMA foreign_keys = ON'),
+      p.join(dir, 'event_log.db'),
+      version: schemaVersion,
       onCreate: _create,
     );
     return _db!;
   }
 
+  static const _sync = '''
+        updated_at INTEGER NOT NULL DEFAULT 0,
+        deleted INTEGER NOT NULL DEFAULT 0''';
+
   Future<void> _create(Database d, int version) async {
     await d.execute('''
-      CREATE TABLE babies (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+      CREATE TABLE subjects (
+        id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        birth_date INTEGER
+        start_date INTEGER,
+        start_kind TEXT,$_sync
       )''');
     await d.execute('''
       CREATE TABLE event_types (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         icon TEXT NOT NULL,
         color INTEGER NOT NULL,
         sort_order INTEGER NOT NULL DEFAULT 0,
         builtin_kind TEXT,
         interval_reminder_hours REAL,
-        stat_field_id INTEGER,
-        hidden INTEGER NOT NULL DEFAULT 0
+        stat_field_id TEXT,
+        stat_agg TEXT NOT NULL DEFAULT 'sum',
+        hidden INTEGER NOT NULL DEFAULT 0,$_sync
       )''');
     await d.execute('''
       CREATE TABLE event_fields (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type_id INTEGER NOT NULL REFERENCES event_types(id) ON DELETE CASCADE,
+        id TEXT PRIMARY KEY,
+        type_id TEXT NOT NULL,
         label TEXT NOT NULL,
         kind TEXT NOT NULL,
         unit TEXT,
         required INTEGER NOT NULL DEFAULT 0,
         remember_last INTEGER NOT NULL DEFAULT 1,
-        sort_order INTEGER NOT NULL DEFAULT 0
+        sort_order INTEGER NOT NULL DEFAULT 0,$_sync
       )''');
     await d.execute('''
       CREATE TABLE field_options (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        field_id INTEGER NOT NULL REFERENCES event_fields(id) ON DELETE CASCADE,
+        id TEXT PRIMARY KEY,
+        field_id TEXT NOT NULL,
         label TEXT NOT NULL,
         color INTEGER,
         sort_order INTEGER NOT NULL DEFAULT 0,
-        hidden INTEGER NOT NULL DEFAULT 0
+        hidden INTEGER NOT NULL DEFAULT 0,$_sync
       )''');
-    await d.execute('''
-      CREATE TABLE events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        baby_id INTEGER NOT NULL,
-        type_id INTEGER NOT NULL,
-        timestamp INTEGER NOT NULL,
-        values TEXT,
-        note TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )''');
-    await d.execute(
-      'CREATE INDEX idx_events_baby_type_ts ON events(baby_id, type_id, timestamp)',
-    );
     await d.execute('''
       CREATE TABLE meds (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         default_dose REAL,
         unit TEXT,
         interval_hours REAL,
-        active INTEGER NOT NULL DEFAULT 1
+        active INTEGER NOT NULL DEFAULT 1,$_sync
       )''');
     await d.execute('''
+      CREATE TABLE events (
+        id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        type_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        vals TEXT,
+        note TEXT,$_sync
+      )''');
+    await d.execute(
+      'CREATE INDEX idx_events_type_ts ON events(type_id, timestamp)',
+    );
+    await d.execute('CREATE INDEX idx_events_ts ON events(timestamp)');
+    await d.execute('''
       CREATE TABLE appointments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        baby_id INTEGER NOT NULL,
+        id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
         title TEXT NOT NULL,
         category TEXT NOT NULL,
         scheduled_at INTEGER NOT NULL,
@@ -98,176 +111,136 @@ class AppDb {
         note TEXT,
         summary TEXT,
         done INTEGER NOT NULL DEFAULT 0,
-        follow_up_asked INTEGER NOT NULL DEFAULT 0
+        follow_up_asked INTEGER NOT NULL DEFAULT 0,$_sync
       )''');
     await d.execute('''
       CREATE TABLE follow_ups (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        appointment_id INTEGER,
+        id TEXT PRIMARY KEY,
+        appointment_id TEXT,
         kind TEXT NOT NULL,
         title TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         remind_daily_at TEXT NOT NULL DEFAULT '10:00',
-        done_at INTEGER
+        done_at INTEGER,$_sync
       )''');
+    // הגדרות מקומיות למכשיר - לא מסונכרנות.
     await d.execute('''
       CREATE TABLE settings (
         key TEXT PRIMARY KEY,
         value TEXT
       )''');
-    await _seed(d);
-  }
-
-  /// ברירות מחדל בעברית. הכל ניתן לעריכה אחר כך.
-  Future<void> _seed(Database d) async {
-    await d.insert('babies', {'name': 'התינוק/ת'});
-
-    Future<int> type(
-      String name,
-      String icon,
-      int color,
-      int order, {
-      String? builtin,
-      double? interval,
-    }) {
-      return d.insert('event_types', {
-        'name': name,
-        'icon': icon,
-        'color': color,
-        'sort_order': order,
-        'builtin_kind': builtin,
-        'interval_reminder_hours': interval,
-      });
-    }
-
-    Future<int> field(
-      int typeId,
-      String label,
-      String kind,
-      int order, {
-      String? unit,
-      bool required = false,
-      bool remember = true,
-    }) {
-      return d.insert('event_fields', {
-        'type_id': typeId,
-        'label': label,
-        'kind': kind,
-        'unit': unit,
-        'required': required ? 1 : 0,
-        'remember_last': remember ? 1 : 0,
-        'sort_order': order,
-      });
-    }
-
-    Future<void> options(int fieldId, List<String> labels) async {
-      for (var i = 0; i < labels.length; i++) {
-        await d.insert('field_options', {
-          'field_id': fieldId,
-          'label': labels[i],
-          'sort_order': i,
-        });
-      }
-    }
-
-    // טיטול
-    final diaper = await type('טיטול', 'diaper', 0xFFF9A825, 0);
-    final what = await field(
-      diaper,
-      'מה היה בו?',
-      FieldKind.multi,
-      0,
-      required: true,
-      remember: false,
-    );
-    await options(what, ['פיפי', 'קקי']);
-    final color = await field(
-      diaper,
-      'צבע',
-      FieldKind.single,
-      1,
-      remember: false,
-    );
-    await options(color, ['צהוב', 'ירוק', 'חום', 'שחור', 'אדום']);
-    final texture = await field(
-      diaper,
-      'מרקם',
-      FieldKind.single,
-      2,
-      remember: false,
-    );
-    await options(texture, ['נוזלי', 'רך', 'קשה']);
-
-    // בקבוק
-    final bottle = await type('בקבוק', 'bottle', 0xFF42A5F5, 1, interval: 3);
-    final ml = await field(
-      bottle,
-      'כמות',
-      FieldKind.number,
-      0,
-      unit: 'מ"ל',
-      required: true,
-    );
-    final kind = await field(bottle, 'סוג', FieldKind.single, 1);
-    await options(kind, ['פורמולה', 'חלב שאוב']);
-    await d.update(
-      'event_types',
-      {'stat_field_id': ml},
-      where: 'id = ?',
-      whereArgs: [bottle],
-    );
-
-    // הנקה
-    final nursing = await type('הנקה', 'nursing', 0xFFEC407A, 2, interval: 3);
-    final side = await field(
-      nursing,
-      'צד',
-      FieldKind.single,
-      0,
-      remember: false,
-    );
-    await options(side, ['ימין', 'שמאל', 'שניהם']);
-    final dur = await field(
-      nursing,
-      'משך',
-      FieldKind.duration,
-      1,
-      unit: 'דקות',
-    );
-    await d.update(
-      'event_types',
-      {'stat_field_id': dur},
-      where: 'id = ?',
-      whereArgs: [nursing],
-    );
-
-    // תרופה (מובנה)
-    await type('תרופה', 'med', 0xFF7E57C2, 3, builtin: BuiltinKind.med);
-
-    // שינה
-    final sleep = await type('שינה', 'sleep', 0xFF5C6BC0, 4);
-    final sleepDur = await field(
-      sleep,
-      'משך',
-      FieldKind.duration,
-      0,
-      unit: 'דקות',
-    );
-    await d.update(
-      'event_types',
-      {'stat_field_id': sleepDur},
-      where: 'id = ?',
-      whereArgs: [sleep],
-    );
-
-    // הערה
-    final note = await type('הערה', 'note', 0xFF8D6E63, 5);
-    await field(note, 'מה קרה?', FieldKind.text, 0, remember: false);
-
+    // אין seed כאן: מסך הפתיחה מבקש לבחור תבנית (או מתחבר לדרייב קיים).
     await d.insert('settings', {'key': 'day_start_hour', 'value': '7'});
+    await d.insert('settings', {'key': 'device_id', 'value': newId()});
   }
 
-  // ---------- עזרי settings ----------
+  // ---------- כתיבה גנרית ----------
+
+  /// כתיבה מקומית: insert או replace, updated_at = עכשיו, deleted = 0.
+  Future<void> upsert(String table, Map<String, Object?> row) async {
+    final m = Map<String, Object?>.from(row);
+    m['updated_at'] = nowMs();
+    m['deleted'] = 0;
+    await (await db).insert(
+      table,
+      m,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// מחיקה רכה: נשאר tombstone כדי שהמחיקה תעבור לשאר המכשירים.
+  Future<void> softDelete(String table, String id) async {
+    await (await db).update(
+      table,
+      {'deleted': 1, 'updated_at': nowMs()},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> restore(String table, String id) async {
+    await (await db).update(
+      table,
+      {'deleted': 0, 'updated_at': nowMs()},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<Set<String>> _columnsOf(String table) async {
+    final cached = _columns[table];
+    if (cached != null) return cached;
+    final info = await (await db).rawQuery('PRAGMA table_info($table)');
+    final cols = info.map((r) => r['name'] as String).toSet();
+    _columns[table] = cols;
+    return cols;
+  }
+
+  // ---------- סנכרון: snapshot ומיזוג ----------
+
+  /// כל השורות של כל הטבלאות המסונכרנות, כולל tombstones.
+  Future<Map<String, dynamic>> snapshot() async {
+    final d = await db;
+    final tables = <String, dynamic>{};
+    for (final t in syncedTables) {
+      tables[t] = await d.query(t);
+    }
+    return {
+      'format': 'event-log',
+      'schema': schemaVersion,
+      'device': await deviceId,
+      'written_at': nowMs(),
+      'tables': tables,
+    };
+  }
+
+  /// מיזוג snapshot שהגיע (מדרייב או מקובץ גיבוי): לכל שורה, הגרסה עם
+  /// updated_at הגבוה מנצחת. מחזיר כמה שורות השתנו מקומית.
+  Future<int> merge(Map<String, dynamic> snap) async {
+    if (snap['format'] != 'event-log') {
+      throw const FormatException('זה לא קובץ של יומן אירועים');
+    }
+    final tables = (snap['tables'] as Map?) ?? {};
+    final d = await db;
+    var changed = 0;
+    await d.transaction((txn) async {
+      for (final t in syncedTables) {
+        final rows = tables[t];
+        if (rows is! List) continue;
+        final cols = await _columnsOf(t);
+        for (final raw in rows) {
+          if (raw is! Map) continue;
+          final row = <String, Object?>{};
+          raw.forEach((k, v) {
+            if (cols.contains(k)) row[k as String] = v as Object?;
+          });
+          final id = row['id'];
+          if (id is! String) continue;
+          final remoteTs = (row['updated_at'] as num?)?.toInt() ?? 0;
+          final local = await txn.query(
+            t,
+            columns: ['updated_at'],
+            where: 'id = ?',
+            whereArgs: [id],
+          );
+          final localTs = local.isEmpty
+              ? -1
+              : (local.first['updated_at'] as int? ?? 0);
+          if (remoteTs > localTs) {
+            await txn.insert(
+              t,
+              row,
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+            changed++;
+          }
+        }
+      }
+    });
+    return changed;
+  }
+
+  // ---------- settings ----------
 
   Future<String?> getSetting(String key) async {
     final rows = await (await db).query(
@@ -279,8 +252,13 @@ class AppDb {
     return rows.first['value'] as String?;
   }
 
-  Future<void> setSetting(String key, String value) async {
-    await (await db).insert('settings', {
+  Future<void> setSetting(String key, String? value) async {
+    final d = await db;
+    if (value == null) {
+      await d.delete('settings', where: 'key = ?', whereArgs: [key]);
+      return;
+    }
+    await d.insert('settings', {
       'key': key,
       'value': value,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -289,38 +267,66 @@ class AppDb {
   Future<int> get dayStartHour async =>
       int.tryParse(await getSetting('day_start_hour') ?? '7') ?? 7;
 
-  // ---------- תינוק ----------
-
-  Future<Baby> currentBaby() async {
-    final rows = await (await db).query('babies', orderBy: 'id', limit: 1);
-    return Baby.fromMap(rows.first);
+  Future<String> get deviceId async {
+    var id = await getSetting('device_id');
+    if (id == null) {
+      id = newId();
+      await setSetting('device_id', id);
+    }
+    return id;
   }
 
-  Future<void> updateBaby(int id, String name, DateTime? birth) async {
-    await (await db).update(
-      'babies',
-      {'name': name, 'birth_date': birth?.millisecondsSinceEpoch},
-      where: 'id = ?',
-      whereArgs: [id],
+  // ---------- נושא היומן ----------
+
+  /// null = עוד לא הוגדר (מסך הפתיחה לא הושלם ולא הגיע כלום מהדרייב).
+  Future<Subject?> currentSubject() async {
+    final rows = await (await db).query(
+      'subjects',
+      where: 'deleted = 0',
+      orderBy: 'id',
+      limit: 1,
     );
+    return rows.isEmpty ? null : Subject.fromMap(rows.first);
   }
+
+  Future<void> saveSubject(Subject s) => upsert('subjects', s.toMap());
+
+  /// יוצר יומן חדש מתבנית: נושא + סוגי האירועים שלה.
+  Future<Subject> createFromTemplate(Template tpl, {String? name}) async {
+    final d = await db;
+    await applyTemplate(d, tpl);
+    final existing = await currentSubject();
+    if (existing != null) return existing;
+    final s = Subject(
+      id: newId(),
+      name: (name == null || name.trim().isEmpty) ? tpl.subjectName : name,
+      startKind: tpl.startKind,
+    );
+    await saveSubject(s);
+    return s;
+  }
+
+  Future<void> addTemplateTypes(Template tpl) async =>
+      applyTemplate(await db, tpl);
 
   // ---------- סוגי אירועים ----------
 
-  Future<List<EventType>> eventTypes({bool includeHidden = false}) async {
+  Future<List<EventType>> eventTypes() async {
     final d = await db;
     final types = (await d.query(
       'event_types',
-      where: includeHidden ? null : 'hidden = 0',
-      orderBy: 'sort_order, id',
+      where: 'deleted = 0',
+      orderBy: 'sort_order, name',
     )).map(EventType.fromMap).toList();
     final fields = (await d.query(
       'event_fields',
-      orderBy: 'sort_order, id',
+      where: 'deleted = 0',
+      orderBy: 'sort_order, label',
     )).map(EventField.fromMap).toList();
     final opts = (await d.query(
       'field_options',
-      orderBy: 'sort_order, id',
+      where: 'deleted = 0',
+      orderBy: 'sort_order, label',
     )).map(FieldOption.fromMap).toList();
     for (final f in fields) {
       f.options = opts.where((o) => o.fieldId == f.id).toList();
@@ -331,120 +337,62 @@ class AppDb {
     return types;
   }
 
-  Future<EventType?> eventType(int id) async {
-    final all = await eventTypes(includeHidden: true);
-    for (final t in all) {
-      if (t.id == id) return t;
-    }
-    return null;
-  }
+  Future<void> saveEventType(EventType t) => upsert('event_types', t.toMap());
 
-  Future<int> insertEventType(EventType t) async =>
-      (await db).insert('event_types', t.toMap());
-
-  Future<void> updateEventType(EventType t) async => (await db).update(
-    'event_types',
-    t.toMap(),
-    where: 'id = ?',
-    whereArgs: [t.id],
-  );
-
-  Future<void> deleteEventType(int id) async {
-    final d = await db;
-    // אירועים ישנים נשארים; הסוג רק מוסתר אם יש לו אירועים.
+  /// מחיקת סוג: אם יש לו אירועים - רק מוסתר; אחרת tombstone.
+  Future<void> deleteEventType(EventType t) async {
     final count =
         Sqflite.firstIntValue(
-          await d.rawQuery('SELECT COUNT(*) FROM events WHERE type_id = ?', [
-            id,
-          ]),
+          await (await db).rawQuery(
+            'SELECT COUNT(*) FROM events WHERE type_id = ? AND deleted = 0',
+            [t.id],
+          ),
         ) ??
         0;
     if (count > 0) {
-      await d.update(
-        'event_types',
-        {'hidden': 1},
-        where: 'id = ?',
-        whereArgs: [id],
-      );
+      t.hidden = true;
+      await saveEventType(t);
     } else {
-      await d.delete('event_types', where: 'id = ?', whereArgs: [id]);
+      await softDelete('event_types', t.id);
     }
   }
 
-  Future<void> reorderEventTypes(List<int> idsInOrder) async {
-    final d = await db;
-    final batch = d.batch();
-    for (var i = 0; i < idsInOrder.length; i++) {
-      batch.update(
-        'event_types',
-        {'sort_order': i},
-        where: 'id = ?',
-        whereArgs: [idsInOrder[i]],
-      );
+  Future<void> reorderEventTypes(List<EventType> inOrder) async {
+    for (var i = 0; i < inOrder.length; i++) {
+      if (inOrder[i].sortOrder == i) continue;
+      inOrder[i].sortOrder = i;
+      await saveEventType(inOrder[i]);
     }
-    await batch.commit(noResult: true);
   }
 
-  Future<int> insertField(EventField f) async =>
-      (await db).insert('event_fields', f.toMap());
+  Future<void> saveField(EventField f) => upsert('event_fields', f.toMap());
 
-  Future<void> updateField(EventField f) async => (await db).update(
-    'event_fields',
-    f.toMap(),
-    where: 'id = ?',
-    whereArgs: [f.id],
-  );
+  Future<void> deleteField(EventField f) async {
+    for (final o in f.options) {
+      await softDelete('field_options', o.id);
+    }
+    await softDelete('event_fields', f.id);
+  }
 
-  Future<void> deleteField(int id) async =>
-      (await db).delete('event_fields', where: 'id = ?', whereArgs: [id]);
+  Future<void> saveOption(FieldOption o) => upsert('field_options', o.toMap());
 
-  Future<int> insertOption(FieldOption o) async =>
-      (await db).insert('field_options', o.toMap());
-
-  Future<void> updateOption(FieldOption o) async => (await db).update(
-    'field_options',
-    o.toMap(),
-    where: 'id = ?',
-    whereArgs: [o.id],
-  );
-
-  Future<void> deleteOption(int id) async =>
-      (await db).delete('field_options', where: 'id = ?', whereArgs: [id]);
+  Future<void> deleteOption(String id) => softDelete('field_options', id);
 
   // ---------- אירועים ----------
 
-  Future<int> insertEvent(LogEvent e) async {
-    final m = e.toMap();
-    m['created_at'] = DateTime.now().millisecondsSinceEpoch;
-    return (await db).insert('events', m);
-  }
+  Future<void> saveEvent(LogEvent e) => upsert('events', e.toMap());
 
-  Future<void> updateEvent(LogEvent e) async => (await db).update(
-    'events',
-    e.toMap(),
-    where: 'id = ?',
-    whereArgs: [e.id],
-  );
+  Future<void> deleteEvent(String id) => softDelete('events', id);
 
-  Future<void> deleteEvent(int id) async =>
-      (await db).delete('events', where: 'id = ?', whereArgs: [id]);
-
-  Future<LogEvent?> event(int id) async {
-    final rows = await (await db).query(
-      'events',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    return rows.isEmpty ? null : LogEvent.fromMap(rows.first);
-  }
+  Future<void> restoreEvent(String id) => restore('events', id);
 
   Future<List<LogEvent>> events({
     DateTime? from,
     DateTime? to,
-    Set<int>? typeIds,
+    Set<String>? typeIds,
     int? limit,
   }) async {
-    final where = <String>[];
+    final where = <String>['deleted = 0'];
     final args = <Object?>[];
     if (from != null) {
       where.add('timestamp >= ?');
@@ -460,7 +408,7 @@ class AppDb {
     }
     final rows = await (await db).query(
       'events',
-      where: where.isEmpty ? null : where.join(' AND '),
+      where: where.join(' AND '),
       whereArgs: args,
       orderBy: 'timestamp DESC',
       limit: limit,
@@ -468,10 +416,10 @@ class AppDb {
     return rows.map(LogEvent.fromMap).toList();
   }
 
-  Future<LogEvent?> lastEventOfType(int typeId) async {
+  Future<LogEvent?> lastEventOfType(String typeId) async {
     final rows = await (await db).query(
       'events',
-      where: 'type_id = ?',
+      where: 'type_id = ? AND deleted = 0',
       whereArgs: [typeId],
       orderBy: 'timestamp DESC',
       limit: 1,
@@ -479,85 +427,67 @@ class AppDb {
     return rows.isEmpty ? null : LogEvent.fromMap(rows.first);
   }
 
-  Future<LogEvent?> lastMedEvent(int medId) async {
+  Future<LogEvent?> lastMedEvent(String medId) async {
     final rows = await (await db).rawQuery(
-      "SELECT * FROM events WHERE values LIKE ? ORDER BY timestamp DESC LIMIT 1",
-      ['%"med_id":$medId%'],
+      'SELECT * FROM events WHERE deleted = 0 AND vals LIKE ? '
+      'ORDER BY timestamp DESC LIMIT 1',
+      ['%"med_id":"$medId"%'],
     );
     return rows.isEmpty ? null : LogEvent.fromMap(rows.first);
   }
 
   // ---------- תרופות ----------
 
-  Future<List<Med>> meds({bool activeOnly = true}) async {
+  Future<List<Med>> meds() async {
     final rows = await (await db).query(
       'meds',
-      where: activeOnly ? 'active = 1' : null,
+      where: 'deleted = 0',
       orderBy: 'name',
     );
     return rows.map(Med.fromMap).toList();
   }
 
-  Future<Med?> med(int id) async {
-    final rows = await (await db).query(
-      'meds',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    return rows.isEmpty ? null : Med.fromMap(rows.first);
+  Future<void> saveMed(Med m) => upsert('meds', m.toMap());
+
+  /// תרופה לא נמחקת כדי שאירועים ישנים ימשיכו להציג את שמה.
+  Future<void> deactivateMed(Med m) async {
+    m.active = false;
+    await saveMed(m);
   }
-
-  Future<int> insertMed(Med m) async => (await db).insert('meds', m.toMap());
-
-  Future<void> updateMed(Med m) async =>
-      (await db).update('meds', m.toMap(), where: 'id = ?', whereArgs: [m.id]);
-
-  Future<void> deleteMed(int id) async => (await db).update(
-    'meds',
-    {'active': 0},
-    where: 'id = ?',
-    whereArgs: [id],
-  );
 
   // ---------- תורים ----------
 
   Future<List<Appointment>> appointments({
     bool upcomingOnly = false,
     DateTime? from,
-    DateTime? to,
   }) async {
-    final where = <String>[];
+    final where = <String>['deleted = 0'];
     final args = <Object?>[];
     if (upcomingOnly) {
-      where.add('scheduled_at >= ?');
+      where.add('scheduled_at >= ? AND done = 0');
       args.add(
         DateTime.now()
             .subtract(const Duration(hours: 3))
             .millisecondsSinceEpoch,
       );
-      where.add('done = 0');
     }
     if (from != null) {
       where.add('scheduled_at >= ?');
       args.add(from.millisecondsSinceEpoch);
     }
-    if (to != null) {
-      where.add('scheduled_at < ?');
-      args.add(to.millisecondsSinceEpoch);
-    }
     final rows = await (await db).query(
       'appointments',
-      where: where.isEmpty ? null : where.join(' AND '),
+      where: where.join(' AND '),
       whereArgs: args,
       orderBy: upcomingOnly ? 'scheduled_at ASC' : 'scheduled_at DESC',
     );
     return rows.map(Appointment.fromMap).toList();
   }
 
-  Future<Appointment?> appointment(int id) async {
+  Future<Appointment?> appointment(String id) async {
     final rows = await (await db).query(
       'appointments',
-      where: 'id = ?',
+      where: 'id = ? AND deleted = 0',
       whereArgs: [id],
     );
     return rows.isEmpty ? null : Appointment.fromMap(rows.first);
@@ -567,60 +497,43 @@ class AppDb {
   Future<List<Appointment>> appointmentsAwaitingFollowUp() async {
     final rows = await (await db).query(
       'appointments',
-      where: 'scheduled_at < ? AND follow_up_asked = 0',
+      where: 'deleted = 0 AND scheduled_at < ? AND follow_up_asked = 0',
       whereArgs: [DateTime.now().millisecondsSinceEpoch],
       orderBy: 'scheduled_at DESC',
     );
     return rows.map(Appointment.fromMap).toList();
   }
 
-  Future<int> insertAppointment(Appointment a) async =>
-      (await db).insert('appointments', a.toMap());
+  Future<void> saveAppointment(Appointment a) =>
+      upsert('appointments', a.toMap());
 
-  Future<void> updateAppointment(Appointment a) async => (await db).update(
-    'appointments',
-    a.toMap(),
-    where: 'id = ?',
-    whereArgs: [a.id],
-  );
-
-  Future<void> deleteAppointment(int id) async =>
-      (await db).delete('appointments', where: 'id = ?', whereArgs: [id]);
+  Future<void> deleteAppointment(String id) => softDelete('appointments', id);
 
   // ---------- מעקב (follow-ups) ----------
 
   Future<List<FollowUp>> openFollowUps() async {
     final rows = await (await db).query(
       'follow_ups',
-      where: 'done_at IS NULL',
+      where: 'deleted = 0 AND done_at IS NULL',
       orderBy: 'created_at',
     );
     return rows.map(FollowUp.fromMap).toList();
   }
 
-  Future<FollowUp?> followUp(int id) async {
+  Future<FollowUp?> followUp(String id) async {
     final rows = await (await db).query(
       'follow_ups',
-      where: 'id = ?',
+      where: 'id = ? AND deleted = 0',
       whereArgs: [id],
     );
     return rows.isEmpty ? null : FollowUp.fromMap(rows.first);
   }
 
-  Future<int> insertFollowUp(FollowUp f) async =>
-      (await db).insert('follow_ups', f.toMap());
+  Future<void> saveFollowUp(FollowUp f) => upsert('follow_ups', f.toMap());
 
-  Future<void> updateFollowUp(FollowUp f) async => (await db).update(
-    'follow_ups',
-    f.toMap(),
-    where: 'id = ?',
-    whereArgs: [f.id],
-  );
+  Future<void> deleteFollowUp(String id) => softDelete('follow_ups', id);
 
-  Future<void> deleteFollowUp(int id) async =>
-      (await db).delete('follow_ups', where: 'id = ?', whereArgs: [id]);
-
-  // ---------- ייצוא ----------
+  // ---------- ייצוא CSV ----------
 
   Future<String> exportCsv(List<EventType> types, List<Med> meds) async {
     final all = await events();
@@ -628,20 +541,37 @@ class AppDb {
     final medById = {for (final m in meds) m.id: m};
     final sb = StringBuffer();
     sb.writeln('﻿תאריך,שעה,סוג,פרטים,הערה');
+    String q(String? s) => '"${(s ?? '').replaceAll('"', '""')}"';
     for (final e in all) {
       final t = typeById[e.typeId];
       final details = t == null
           ? jsonEncode(e.values)
           : describeValues(t, e.values, medById);
-      String q(String? s) => '"${(s ?? '').replaceAll('"', '""')}"';
       final ts = e.timestamp;
       sb.writeln(
         [
           '${ts.year}-${_two(ts.month)}-${_two(ts.day)}',
           '${_two(ts.hour)}:${_two(ts.minute)}',
-          q(t?.name ?? e.typeId.toString()),
+          q(t?.name ?? e.typeId),
           q(details),
           q(e.note),
+        ].join(','),
+      );
+    }
+    for (final a in await appointments()) {
+      final ts = a.scheduledAt;
+      sb.writeln(
+        [
+          '${ts.year}-${_two(ts.month)}-${_two(ts.day)}',
+          '${_two(ts.hour)}:${_two(ts.minute)}',
+          q('תור: ${a.category}'),
+          q([a.title, if (a.location != null) a.location!].join(' · ')),
+          q(
+            [
+              if (a.note != null) a.note!,
+              if (a.summary != null) a.summary!,
+            ].join(' | '),
+          ),
         ].join(','),
       );
     }
@@ -655,7 +585,7 @@ class AppDb {
 String describeValues(
   EventType t,
   Map<String, dynamic> values,
-  Map<int, Med> medById,
+  Map<String, Med> medById,
 ) {
   if (t.isMed) {
     final med = medById[values['med_id']];
@@ -669,7 +599,7 @@ String describeValues(
   }
   final parts = <String>[];
   for (final f in t.fields) {
-    final v = values[f.id.toString()];
+    final v = values[f.id];
     if (v == null) continue;
     switch (f.kind) {
       case FieldKind.single:
@@ -677,7 +607,7 @@ String describeValues(
         if (o.isNotEmpty) parts.add(o.first.label);
         break;
       case FieldKind.multi:
-        final ids = (v as List).cast<int>();
+        final ids = (v as List).map((x) => x.toString()).toSet();
         final labels = f.options
             .where((o) => ids.contains(o.id))
             .map((o) => o.label);

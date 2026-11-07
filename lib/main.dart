@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_state.dart';
-import 'models.dart';
 import 'screens/appointment_screen.dart';
 import 'screens/follow_up_sheet.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'screens/log_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/stats_screen.dart';
@@ -14,20 +16,23 @@ import 'widgets/log_sheet.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AppState.instance.load();
+  final state = AppState.instance;
+  await state.load();
   await Notifications.instance.init();
   await Notifications.instance.rescheduleAll();
-  runApp(const BabyLogApp());
+  state.sync.onRemoteChanges = state.onRemoteChanges;
+  unawaited(state.sync.start());
+  runApp(const EventLogApp());
 }
 
-class BabyLogApp extends StatelessWidget {
-  const BabyLogApp({super.key});
+class EventLogApp extends StatelessWidget {
+  const EventLogApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF42A5F5));
     return MaterialApp(
-      title: 'יומן תינוק',
+      title: 'יומן אירועים',
       debugShowCheckedModeBanner: false,
       locale: const Locale('he'),
       supportedLocales: const [Locale('he'), Locale('en')],
@@ -54,7 +59,12 @@ class BabyLogApp extends StatelessWidget {
         textDirection: TextDirection.rtl,
         child: child ?? const SizedBox.shrink(),
       ),
-      home: const Shell(),
+      home: ListenableBuilder(
+        listenable: AppState.instance,
+        builder: (context, _) => AppState.instance.isSetUp
+            ? const Shell()
+            : const OnboardingScreen(),
+      ),
     );
   }
 }
@@ -66,13 +76,20 @@ class Shell extends StatefulWidget {
   State<Shell> createState() => _ShellState();
 }
 
-class _ShellState extends State<Shell> {
+class _ShellState extends State<Shell> with WidgetsBindingObserver {
   int index = 0;
   final state = AppState.instance;
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState s) {
+    // חוזרים לאפליקציה: אולי טלפון אחר תיעד בינתיים.
+    if (s == AppLifecycleState.resumed) unawaited(state.sync.sync());
+  }
+
+  @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     Notifications.instance.onTap = _onNotificationTap;
     final pending = Notifications.instance.pending;
     if (pending != null) {
@@ -85,6 +102,7 @@ class _ShellState extends State<Shell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     Notifications.instance.onTap = null;
     super.dispose();
   }
@@ -98,14 +116,7 @@ class _ShellState extends State<Shell> {
         final t = state.typeById[tap.id];
         if (t == null) return;
         if (tap.actionId == 'done') {
-          await state.saveEvent(
-            LogEvent(
-              id: 0,
-              babyId: state.baby?.id ?? 1,
-              typeId: t.id,
-              timestamp: DateTime.now(),
-            ),
-          );
+          await state.saveEvent(state.newEvent(t.id));
           _snack('נרשם: ${t.name}');
         } else if (tap.actionId == 'snooze') {
           await Notifications.instance.snoozeType(t);
@@ -120,11 +131,8 @@ class _ShellState extends State<Shell> {
         if (m == null || medType == null) return;
         if (tap.actionId == 'done') {
           await state.saveEvent(
-            LogEvent(
-              id: 0,
-              babyId: state.baby?.id ?? 1,
-              typeId: medType.id,
-              timestamp: DateTime.now(),
+            state.newEvent(
+              medType.id,
               values: {'med_id': m.id, 'dose': m.defaultDose},
             ),
           );

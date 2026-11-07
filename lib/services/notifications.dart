@@ -5,6 +5,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../db/app_db.dart';
 import '../models.dart';
 import '../util/format.dart';
+import '../util/ids.dart';
 
 /// מה קרה כשהמשתמש לחץ על התראה (או על כפתור בה).
 class NotificationTap {
@@ -13,7 +14,7 @@ class NotificationTap {
   NotificationTap(this.payload, this.actionId);
 
   String get kind => payload.split(':').first;
-  int get id => int.tryParse(payload.split(':').last) ?? 0;
+  String get id => payload.substring(payload.indexOf(':') + 1);
 }
 
 class Notifications {
@@ -32,7 +33,7 @@ class Notifications {
   static const _channel = AndroidNotificationDetails(
     'reminders',
     'תזכורות',
-    channelDescription: 'תזכורות האכלה, תרופות ותורים',
+    channelDescription: 'תזכורות לפי מרווח, תרופות, תורים ומשימות מעקב',
     importance: Importance.high,
     priority: Priority.high,
     category: AndroidNotificationCategory.reminder,
@@ -115,11 +116,13 @@ class Notifications {
   ];
 
   // ---------- מזהי התראות ----------
-  static int typeId(int t) => 1000 + t;
-  static int medId(int m) => 2000 + m;
-  static int apptId(int a, int idx) => 3000 + a * 4 + idx;
-  static int apptAskId(int a) => 40000 + a;
-  static int followUpId(int f) => 50000 + f;
+  // המזהים במסד הם מחרוזות; ההתראה צריכה int יציב כדי שאפשר יהיה לבטל אותה.
+  static int _h(String s) => stableHash(s) % 400000;
+  static int typeId(String t) => 1000000 + _h(t);
+  static int medId(String m) => 2000000 + _h(m);
+  static int apptId(String a, int idx) => 3000000 + _h(a) * 5 + idx;
+  static int apptAskId(String a) => apptId(a, 4);
+  static int followUpId(String f) => 6000000 + _h(f);
 
   // ---------- תזכורת "כל X שעות" לסוג אירוע ----------
 
@@ -131,7 +134,7 @@ class Notifications {
     await _schedule(
       typeId(t.id),
       'הגיע הזמן: ${t.name}',
-      'ה${t.name} האחרון/ה היה ב-${fmtTime(last)}',
+      'הפעם האחרונה: ${fmtTime(last)}',
       when,
       'log:${t.id}',
       actions: _logActions,

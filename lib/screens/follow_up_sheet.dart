@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_state.dart';
 import '../models.dart';
+import '../util/ids.dart';
 import 'appointment_screen.dart';
 
 /// שאלון קצר אחרי תור: סיכום, מרשם, הפניה, תור המשך.
@@ -62,7 +63,7 @@ class _FollowUpSheetState extends State<_FollowUpSheet> {
         final name = medCtrl.text.trim();
         await state.addFollowUp(
           FollowUp(
-            id: 0,
+            id: newId(),
             appointmentId: a.id,
             kind: FollowUpKind.buyMed,
             title: name.isEmpty ? 'לקנות את התרופה מהמרשם' : 'לקנות: $name',
@@ -74,8 +75,8 @@ class _FollowUpSheetState extends State<_FollowUpSheet> {
             (m) => m.name.trim().toLowerCase() == name.toLowerCase(),
           );
           if (!exists) {
-            await state.db.insertMed(Med(id: 0, name: name));
-            await state.load();
+            await state.db.saveMed(Med(id: newId(), name: name));
+            await state.reloadStructure();
           }
         }
       }
@@ -83,7 +84,7 @@ class _FollowUpSheetState extends State<_FollowUpSheet> {
         final what = referralCtrl.text.trim();
         await state.addFollowUp(
           FollowUp(
-            id: 0,
+            id: newId(),
             appointmentId: a.id,
             kind: FollowUpKind.bookAppointment,
             title: what.isEmpty ? 'לקבוע תור לפי ההפניה' : 'לקבוע תור: $what',

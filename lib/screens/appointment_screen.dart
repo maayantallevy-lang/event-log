@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../models.dart';
 import '../util/format.dart';
+import '../util/ids.dart';
 
 /// פותח מסך הוספה/עריכה של תור. [existing] null = תור חדש.
 Future<void> openAppointment(
@@ -101,8 +102,8 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
     var title = titleCtrl.text.trim();
     if (title.isEmpty) title = category;
     final a = Appointment(
-      id: widget.existing?.id ?? 0,
-      babyId: state.baby?.id ?? 1,
+      id: widget.existing?.id ?? newId(),
+      subjectId: widget.existing?.subjectId ?? state.subjectId,
       title: title,
       category: category,
       scheduledAt: when,
