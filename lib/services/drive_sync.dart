@@ -11,7 +11,8 @@ import '../db/app_db.dart';
 /// לא סוד (מופיע בכל APK). נדרש באנדרואיד כ-serverClientId.
 const googleWebClientId = String.fromEnvironment(
   'GOOGLE_WEB_CLIENT_ID',
-  defaultValue: '',
+  defaultValue:
+      '494572279154-3pkmvau9hqa3gorvq0jg2kotvojj498o.apps.googleusercontent.com',
 );
 
 /// הרשאה מצומצמת: האפליקציה רואה רק קבצים שהיא עצמה יצרה בדרייב.

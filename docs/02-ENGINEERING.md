@@ -1,12 +1,13 @@
-# כתב הנחיות הנדסי מחייב - יומן תינוק
+# כתב הנחיות הנדסי מחייב - יומן אירועים
 
 הכרעות נעולות. שינוי רק באישור המבקש ורישום D-n.
 
 ## שפה ופריימוורק
 - Flutter (ערוץ stable, כפי ש-GitHub Actions מביא), Dart 3. אנדרואיד בלבד; minSdk 24.
 - מצב: `AppState` יחיד (ChangeNotifier) ב-`lib/app_state.dart`. בלי Riverpod/Bloc.
-- מסד: sqflite, SQL גולמי ב-`lib/db/app_db.dart`. סכימה בגרסה 1; כל שינוי סכימה = `onUpgrade` עם מיגרציה ממוספרת, אף פעם לא עריכה של מיגרציה שנפרסה (3.5 בפלייבוק).
-- התראות: `lib/services/notifications.dart` בלבד מדבר עם הפלאגין. מזהי התראות: 1000+type, 2000+med, 3000+appt*4+i, 40000+appt, 50000+followUp.
+- מסד: sqflite, SQL גולמי ב-`lib/db/app_db.dart`. סכימה בגרסה 2 (קובץ `event_log.db`); כל טבלה מסונכרנת עם מזהה TEXT, `updated_at`, `deleted`. כתיבה רק דרך `upsert`/`softDelete`; כל שינוי סכימה = `onUpgrade` עם מיגרציה ממוספרת, אף פעם לא עריכה של מיגרציה שנפרסה (3.5 בפלייבוק).
+- התראות: `lib/services/notifications.dart` בלבד מדבר עם הפלאגין. מזהי התראות: hash יציב (FNV-1a) של מזהה המחרוזת בטווחים 1M/2M/3M/6M.
+- סנכרון: `lib/services/drive_sync.dart` בלבד מדבר עם Drive (REST v3, scope drive.file). המוצר כללי - שום טקסט או ברירת מחדל לא מניחים תינוק; תוכן ייעודי רק בתבניות `lib/db/templates.dart`.
 
 ## מבנה תיקיות
 ```
@@ -14,11 +15,13 @@ lib/
   main.dart            אפליקציה, ניווט, טיפול בלחיצה על התראה
   app_state.dart       מצב גלובלי + פעולות שמשלבות DB ותזכורות
   models.dart          מודלים טהורים
-  db/app_db.dart       SQLite, seed, שאילתות, ייצוא CSV
-  services/            התראות
+  db/app_db.dart       SQLite, snapshot/merge, שאילתות, ייצוא CSV
+  db/templates.dart    תבניות (תינוק/הריון/בריאות/ריק)
+  services/            התראות, סנכרון Drive
   screens/             מסך לכל קובץ
   widgets/             log_sheet - הפופאפ הדינמי
   util/format.dart     עזרי תאריך/זמן/עברית, אייקונים, פלטה
+  util/ids.dart        מזהים גלובליים, hash יציב
 docs/                  ארבעת מסמכי היסוד + opening.yaml
 ```
 
@@ -27,7 +30,7 @@ docs/                  ארבעת מסמכי היסוד + opening.yaml
 - "היום" = יום לוגי שמתחיל ב-`day_start_hour` (ברירת מחדל 07:00). פונקציה אחת: `logicalDayStart` ב-`util/format.dart`. כל ספירה ליום עוברת דרכה.
 - זמנים נשמרים כ-millisecondsSinceEpoch (UTC) ומוצגים בזמן המכשיר.
 - קובץ עד 600 שורות, פונקציה עד 60 שורות; הערה בעברית שמסבירה "למה" במקומות לא מובנים מאליהם.
-- בלי סודות בריפו וב-Drive: אין keystore, אין מפתחות AdMob. ייכנסו רק כ-GitHub Secrets.
+- בלי סודות בריפו ובתיקיית הפרויקט בדרייב. keystore רק ב-GitHub Secrets + גיבוי בתיקייה הפרטית "99 סודות" (D-14).
 - אירועים לא נמחקים בשקט: מחיקה תמיד עם "בטל" (snackbar). סוג אירוע עם אירועים רק מוסתר.
 - האפליקציה לא נותנת ייעוץ רפואי ולא מציעה מינונים. טקסט ההצהרה בהגדרות נשאר.
 

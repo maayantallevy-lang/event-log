@@ -1,33 +1,42 @@
 # RESTORE - נקודת עצירה
 
-עודכן: 2026-11-07 11:40 | commit: ראו `git log -1` ב-main | ספרינט: 1 (MVP לשימוש עצמי)
+עודכן: 2026-11-07 | commit: ראו `git log -1` ב-main | ספרינט: 2 (מוצר כללי + סנכרון Drive)
 
 ## איפה הקוד
-- GitHub: https://github.com/maayantallevy-lang/baby-log (ענף main). זה הקוד הרץ.
-- Drive (SSOT לתיעוד וגיבוי): תיקיית "יומן אירועים" - `01 מסמכי יסוד` (המסמכים האלה), `02 קוד` (עותק של כל קובץ מקור), `08 פריסה ותפעול` (APK, קישורי Release).
-- APK: GitHub Releases של הריפו (כל push ל-main בונה ומפרסם Release עם APK ו-sha256).
+- GitHub: https://github.com/maayantallevy-lang/event-log (ענף main; לשעבר baby-log). זה הקוד הרץ.
+- Drive (SSOT לתיעוד וגיבוי): תיקיית "יומן אירועים" - `01 מסמכי יסוד` (המסמכים האלה), `02 קוד` (עותק של כל קובץ מקור), `08 פריסה ותפעול` (קישורי Release והתקנה).
+- APK: GitHub Releases של הריפו (כל push ל-main בונה, חותם ומפרסם Release עם APK ו-sha256).
 
 ## איך משחזרים סביבה
 ```bash
-git clone https://github.com/maayantallevy-lang/baby-log && cd baby-log
+git clone https://github.com/maayantallevy-lang/event-log && cd event-log
 flutter pub get && flutter analyze && flutter build apk --release
 ```
-- הסביבה של Claude לא יכולה להוריד חבילות (pub.dev חסום) ולא Android SDK. לכן: כותבים קוד, דוחפים, ו-GitHub Actions מקמפל. `dart format` רץ מקומית עם Flutter SDK ב-`/home/claude/sdk/flutter`.
-- שרת Drive: דרך מחבר Drive של Claude (לא דרך גשר GAS). אין אפשרות לעדכן תוכן קובץ קיים במקום - קובץ שמשתנה מועלה מחדש והישן נשלח לאשפה.
+- בנייה מקומית בלי `android/key.properties` נחתמת במפתח debug (לא מתעדכנת מעל גרסה חתומה).
+- הסביבה של Claude לא יכולה להוריד חבילות (pub.dev חסום) ולא Android SDK. לכן: כותבים קוד, דוחפים, ו-GitHub Actions מקמפל.
+- Drive: דרך מחבר Drive של Claude. אין עדכון תוכן במקום - קובץ שמשתנה מועלה מחדש והישן לאשפה.
+
+## חתימה (D-14)
+- keystore קבוע: alias `upload`. גיבוי: Drive, תיקייה פרטית "99 סודות" (upload.jks + קובץ סיסמה). לא בריפו.
+- GitHub Secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`. ה-workflow נכשל אם חסרים.
+- SHA-1: 8A:2A:9E:4C:99:59:18:E3:58:00:2F:B4:21:10:97:2C:50:38:70:B3
+
+## Google Cloud (סנכרון Drive, D-13)
+- פרויקט: `event-log-514014` (חשבון המבקש). Drive API פעיל. מסך הסכמה: External, Testing, משתמש בדיקה: חשבון המבקש בלבד.
+- OAuth Android: חבילה `il.co.maayan.eventlog` + SHA-1 למעלה.
+- OAuth Web (serverClientId): `494572279154-3pkmvau9hqa3gorvq0jg2kotvojj498o.apps.googleusercontent.com` - מוטבע ב-`lib/services/drive_sync.dart`. לא סוד.
+- מגבלה: בסטטוס Testing רק משתמשי בדיקה יכולים להתחבר. לשיתוף עם אחרים: להוסיף אותם כמשתמשי בדיקה או לעבור לאימות.
 
 ## מצב
-- ירוק: ספרינט 0 (ריפו, CI, בנייה ירוקה, analyze נקי).
-- רץ: ספרינט 1 - MVP מלא כתוב (בית, יומן, סטטיסטיקה, הגדרות, עורך סוגי אירועים, תרופות, תזכורות, תורים, מעקב אחרי תור). לא נבדק עדיין על מכשיר.
+- ירוק: S0, S1 (MVP תינוק, v0.1).
+- רץ: S2 - v0.2.0 כללי (תבניות: תינוק/הריון/בריאות/ריק), סכימה v2 עם מזהים גלובליים, סנכרון Drive. לא נבדק על מכשיר.
 
 ## הצעד הבא
-- המבקש מתקין את ה-APK מ-GitHub Releases על הטלפון ומדווח: מה עובד, מה לא.
-- תיקונים לפי הדיווח; אחר כך ספרינט 2 (ווידג'ט, ייצוא משופר, אנגלית, AdMob).
-
-## פתוח אצל המבקש
-- D-7 (ברירת מחדל: שם האפליקציה "יומן תינוק", מזהה `il.co.maayan.baby_log`; תאריך יעד 2026-11-14).
-- D-8 (ברירת מחדל: חתימת release בחשבון Play של המבקש, לא של Claude; לפני פרסום בחנות).
+- המבקש מסיר את v0.1 (מזהה וחתימה שונים), מתקין v0.2.0 מ-Releases, בוחר "בגוגל דרייב שלי" ומדווח.
+- אחר כך: ווידג'ט, אייקון, אנגלית, AdMob.
 
 ## איך המבקש עובד
 - עברית בלבד, 3-6 שורות, צעד ידני אחד בכל פעם, פקודה בבלוק משלה.
 - כל קובץ חייב להיות ב-Drive; הסביבה של Claude מתאפסת.
 - Claude הוא החשבון של המבקש (מעיין), לא של לקוחות שלו.
+- דפדפן: הכרום של המבקש (לא הדפדפן המובנה).
