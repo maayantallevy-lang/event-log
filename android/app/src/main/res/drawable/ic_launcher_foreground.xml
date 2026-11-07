@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- יומנון - לוגו B (ציר זמן). שכבה קדמית של אייקון אדפטיבי, בתוך אזור הבטיחות 66dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="13.338" android:translateY="12.528" android:scaleX="0.162" android:scaleY="0.162">
+        <path android:fillColor="#ECDCC7" android:pathData="M340,118 H340 A10,10 0 0 1 350,128 V384 A10,10 0 0 1 340,394 H340 A10,10 0 0 1 330,384 V128 A10,10 0 0 1 340,118 Z"/>
+        <path android:fillColor="#FFC9B5" android:pathData="M134,136 H276 A14,14 0 0 1 290,150 V150 A14,14 0 0 1 276,164 H134 A14,14 0 0 1 120,150 V150 A14,14 0 0 1 134,136 Z"/>
+        <path android:fillColor="#C8CDF8" android:pathData="M180,242 H276 A14,14 0 0 1 290,256 V256 A14,14 0 0 1 276,270 H180 A14,14 0 0 1 166,256 V256 A14,14 0 0 1 180,242 Z"/>
+        <path android:fillColor="#BFE9DF" android:pathData="M152,348 H276 A14,14 0 0 1 290,362 V362 A14,14 0 0 1 276,376 H152 A14,14 0 0 1 138,362 V362 A14,14 0 0 1 152,348 Z"/>
+        <path android:fillColor="#FF7F5C" android:pathData="M298,150 A42,42 0 1 1 382,150 A42,42 0 1 1 298,150 Z"/>
+        <path android:fillColor="#4A5BD4" android:pathData="M298,256 A42,42 0 1 1 382,256 A42,42 0 1 1 298,256 Z"/>
+        <path android:fillColor="#22A88F" android:pathData="M298,362 A42,42 0 1 1 382,362 A42,42 0 1 1 298,362 Z"/>
+    </group>
+</vector>

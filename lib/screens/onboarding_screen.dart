@@ -116,6 +116,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       padding: const EdgeInsets.all(20),
       children: [
         const SizedBox(height: 24),
+        Center(
+          child: Image.asset('assets/brand/logo.png', width: 96, height: 96),
+        ),
+        const SizedBox(height: 12),
         Text(
           'יומנון',
           style: Theme.of(context).textTheme.headlineMedium,
