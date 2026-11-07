@@ -1,0 +1,30 @@
+name: baby_log
+description: יומן תינוק - תיעוד מהיר של טיטולים, האכלות, תרופות ותורים.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+  sqflite: ^2.4.1
+  path: ^1.9.0
+  path_provider: ^2.1.5
+  flutter_local_notifications: ^19.0.0
+  timezone: ^0.10.0
+  fl_chart: ^0.70.0
+  share_plus: ^10.1.4
+  shared_preferences: ^2.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
