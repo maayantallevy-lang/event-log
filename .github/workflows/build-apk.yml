@@ -51,8 +51,10 @@ jobs:
           EOF
           keytool -list -v -keystore android/app/upload.jks -storepass "$KEYSTORE_PASSWORD" | grep -E "SHA1:"
 
-      - name: Build release APK
-        run: flutter build apk --release
+      - name: Build release APK and AAB
+        run: |
+          flutter build apk --release --build-number=${GITHUB_RUN_NUMBER}
+          flutter build appbundle --release --build-number=${GITHUB_RUN_NUMBER}
 
       - name: Name the APK
         id: apk
@@ -61,6 +63,9 @@ jobs:
           NAME="event-log-v${VERSION}-build${GITHUB_RUN_NUMBER}.apk"
           cp build/app/outputs/flutter-apk/app-release.apk "$NAME"
           sha256sum "$NAME" > "$NAME.sha256"
+          AAB="event-log-v${VERSION}-build${GITHUB_RUN_NUMBER}.aab"
+          cp build/app/outputs/bundle/release/app-release.aab "$AAB"
+          echo "aab=$AAB" >> "$GITHUB_OUTPUT"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}-build${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
@@ -79,6 +84,7 @@ jobs:
           files: |
             ${{ steps.apk.outputs.name }}
             ${{ steps.apk.outputs.name }}.sha256
+            ${{ steps.apk.outputs.aab }}
           body: |
-            Baby log - Android APK (release, debug-signed).
-            Install: open this page on the phone, download the .apk and allow "install from unknown sources".
+            יומנון - גרסה חתומה.
+            .apk - התקנה ישירה בטלפון. .aab - להעלאה ל-Google Play Console.
