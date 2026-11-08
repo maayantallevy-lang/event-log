@@ -120,8 +120,13 @@ class Notifications {
   static int _h(String s) => stableHash(s) % 400000;
   static int typeId(String t) => 1000000 + _h(t);
   static int medId(String m) => 2000000 + _h(m);
-  static int apptId(String a, int idx) => 3000000 + _h(a) * 5 + idx;
-  static int apptAskId(String a) => apptId(a, 4);
+
+  /// עד [maxApptReminders] תזכורות לתור + התראת "איך היה?".
+  static const maxApptReminders = 10;
+  static int apptId(String a, int idx) => 10000000 + _h(a) * 12 + idx;
+  static int apptAskId(String a) => apptId(a, 11);
+  // מזהים של גרסאות 0.3 ומטה, כדי לבטל התראות ישנות שנשארו מתוזמנות.
+  static int _legacyApptId(String a, int idx) => 3000000 + _h(a) * 5 + idx;
   static int followUpId(String f) => 6000000 + _h(f);
 
   // ---------- תזכורת "כל X שעות" לסוג אירוע ----------
@@ -188,7 +193,7 @@ class Notifications {
     final where = a.location == null || a.location!.isEmpty
         ? ''
         : ' · ${a.location}';
-    for (var i = 0; i < a.remindBeforeMin.length && i < 4; i++) {
+    for (var i = 0; i < a.remindBeforeMin.length && i < maxApptReminders; i++) {
       final when = a.scheduledAt.subtract(
         Duration(minutes: a.remindBeforeMin[i]),
       );
@@ -212,10 +217,13 @@ class Notifications {
   }
 
   Future<void> cancelAppointment(Appointment a) async {
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < maxApptReminders; i++) {
       await cancel(apptId(a.id, i));
     }
     await cancel(apptAskId(a.id));
+    for (var i = 0; i < 5; i++) {
+      await cancel(_legacyApptId(a.id, i));
+    }
   }
 
   // ---------- משימות מעקב: נדנוד פעם ביום ----------

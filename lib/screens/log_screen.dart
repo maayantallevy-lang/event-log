@@ -243,6 +243,8 @@ class _LogScreenState extends State<LogScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('נמחק: ${t.name}'),
+            duration: const Duration(seconds: 4),
+            persist: false,
             action: SnackBarAction(
               label: 'בטל',
               onPressed: () => state.undoDelete(e),

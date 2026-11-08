@@ -65,19 +65,9 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// רישום אירוע. בלי פס "נרשם / בטל": אפשר למחוק כל אירוע מהרשימה בכל רגע.
   Future<void> _log(EventType t) async {
-    final saved = await showLogSheet(context, t);
-    if (saved == null || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('נרשם: ${t.name}'),
-        duration: const Duration(seconds: 5),
-        action: SnackBarAction(
-          label: 'בטל',
-          onPressed: () => state.deleteEvent(saved),
-        ),
-      ),
-    );
+    await showLogSheet(context, t);
   }
 
   @override
@@ -397,6 +387,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: const Text('נמחק'),
+                          duration: const Duration(seconds: 4),
+                          persist: false,
                           action: SnackBarAction(
                             label: 'בטל',
                             onPressed: () => state.undoDelete(e),

@@ -4,6 +4,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../util/format.dart';
 import '../util/ids.dart';
+import '../widgets/reminder_editor.dart';
 
 /// פותח מסך הוספה/עריכה של תור. [existing] null = תור חדש.
 Future<void> openAppointment(
@@ -36,14 +37,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
   final summaryCtrl = TextEditingController();
   String category = AppointmentCategory.all.first;
   late DateTime when;
-  final Set<int> remind = {}; // דקות לפני
-
-  static const remindOptions = <int, String>{
-    60: 'שעה לפני',
-    180: '3 שעות לפני',
-    1440: 'יום לפני',
-    2880: 'יומיים לפני',
-  };
+  List<int> remind = []; // דקות לפני, ממוין
 
   @override
   void initState() {
@@ -56,12 +50,12 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
       summaryCtrl.text = e.summary ?? '';
       category = e.category;
       when = e.scheduledAt;
-      remind.addAll(e.remindBeforeMin);
+      remind = [...e.remindBeforeMin]..sort();
     } else {
       titleCtrl.text = widget.titleHint ?? '';
       final now = DateTime.now().add(const Duration(days: 1));
       when = DateTime(now.year, now.month, now.day, 9, 0);
-      remind.addAll([60, 1440]);
+      remind = [60, 1440];
     }
   }
 
@@ -110,7 +104,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
       location: locationCtrl.text.trim().isEmpty
           ? null
           : locationCtrl.text.trim(),
-      remindBeforeMin: remind.toList()..sort(),
+      remindBeforeMin: [...remind],
       note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
       summary: summaryCtrl.text.trim().isEmpty ? null : summaryCtrl.text.trim(),
       done: widget.existing?.done ?? false,
@@ -212,22 +206,9 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
           ),
           const SizedBox(height: 12),
           const Text('תזכורות', style: TextStyle(fontWeight: FontWeight.bold)),
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final e in remindOptions.entries)
-                FilterChip(
-                  label: Text(e.value),
-                  selected: remind.contains(e.key),
-                  onSelected: (s) => setState(() {
-                    if (s) {
-                      remind.add(e.key);
-                    } else {
-                      remind.remove(e.key);
-                    }
-                  }),
-                ),
-            ],
+          ReminderEditor(
+            minutes: remind,
+            onChanged: (v) => setState(() => remind = v),
           ),
           const SizedBox(height: 12),
           TextField(
