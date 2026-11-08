@@ -24,6 +24,28 @@ class Notifications {
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
 
+  /// האם מותר לתזמן התראות בזמן מדויק (אנדרואיד 12+ דורש אישור).
+  /// בלי אישור - התראות "בערך בזמן" (עד כמה דקות איחור), בלי קריסה.
+  bool exactAllowed = true;
+
+  AndroidFlutterLocalNotificationsPlugin? get _android => _plugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
+
+  /// פותח את מסך ההרשאה "התראות ותזכורות" של אנדרואיד.
+  Future<void> requestExactAlarms() async {
+    await _android?.requestExactAlarmsPermission();
+    exactAllowed = await _android?.canScheduleExactNotifications() ?? true;
+  }
+
+  Future<void> requestNotifications() async {
+    await _android?.requestNotificationsPermission();
+  }
+
+  Future<bool> notificationsEnabled() async =>
+      await _android?.areNotificationsEnabled() ?? true;
+
   /// נקרא מה-UI כשיש לחיצה על התראה.
   void Function(NotificationTap tap)? onTap;
 
@@ -52,8 +74,12 @@ class Notifications {
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
-    await android?.requestNotificationsPermission();
-    await android?.requestExactAlarmsPermission();
+    try {
+      await android?.requestNotificationsPermission();
+      exactAllowed = await android?.canScheduleExactNotifications() ?? true;
+    } catch (_) {
+      exactAllowed = false;
+    }
     final launch = await _plugin.getNotificationAppLaunchDetails();
     if (launch?.didNotificationLaunchApp == true &&
         launch?.notificationResponse != null) {
@@ -93,15 +119,28 @@ class Notifications {
         actions: actions,
       ),
     );
-    await _plugin.zonedSchedule(
+    Future<void> go(AndroidScheduleMode mode) => _plugin.zonedSchedule(
       id,
       title,
       body,
       tz.TZDateTime.from(when, tz.local),
       details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: mode,
       payload: payload,
     );
+    try {
+      await go(
+        exactAllowed
+            ? AndroidScheduleMode.exactAllowWhileIdle
+            : AndroidScheduleMode.inexactAllowWhileIdle,
+      );
+    } catch (_) {
+      // ההרשאה בוטלה בינתיים: נופלים לתזמון לא מדויק במקום לקרוס.
+      exactAllowed = false;
+      try {
+        await go(AndroidScheduleMode.inexactAllowWhileIdle);
+      } catch (_) {}
+    }
   }
 
   Future<void> cancel(int id) => _plugin.cancel(id);
@@ -136,6 +175,11 @@ class Notifications {
   // מזהים של גרסאות 0.3 ומטה, כדי לבטל התראות ישנות שנשארו מתוזמנות.
   static int _legacyApptId(String a, int idx) => 3000000 + _h(a) * 5 + idx;
   static int followUpId(String f) => 6000000 + _h(f);
+
+  /// נדנוד יומי = התראה נפרדת לכל אחד מ-[followUpDays] הימים הבאים, כדי
+  /// שגם התראה שהוחלקה תחזור מחר (ובלי תלות באזור הזמן של הספרייה).
+  static const followUpDays = 14;
+  static int followUpDayId(String f, int day) => 20000000 + _h(f) * 16 + day;
 
   // ---------- תזכורת "כל X שעות" לסוג אירוע ----------
 
@@ -236,42 +280,60 @@ class Notifications {
 
   // ---------- משימות מעקב: נדנוד פעם ביום ----------
 
+  Future<void> cancelFollowUp(FollowUp f) async {
+    await cancel(followUpId(f.id)); // מזהה של גרסאות קודמות
+    for (var d = 0; d < followUpDays; d++) {
+      await cancel(followUpDayId(f.id, d));
+    }
+  }
+
   Future<void> scheduleFollowUp(FollowUp f) async {
-    await cancel(followUpId(f.id));
+    await cancelFollowUp(f);
     if (!f.isOpen) return;
     final parts = f.remindDailyAt.split(':');
     final h = int.tryParse(parts[0]) ?? 10;
     final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
     final now = DateTime.now();
-    var when = DateTime(now.year, now.month, now.day, h, m);
-    if (!when.isAfter(now.add(const Duration(minutes: 1)))) {
-      when = when.add(const Duration(days: 1));
+    var first = DateTime(now.year, now.month, now.day, h, m);
+    if (!first.isAfter(now.add(const Duration(minutes: 1)))) {
+      first = DateTime(now.year, now.month, now.day + 1, h, m);
     }
-    await _schedule(
-      followUpId(f.id),
-      '${_pfx(f.subjectId)}תזכורת: ${f.title}',
-      'סמן "בוצע" כשסיימת ואפסיק להזכיר',
-      when,
-      'followup:${f.id}',
-      actions: const [
-        AndroidNotificationAction('done', 'בוצע', showsUserInterface: true),
-        AndroidNotificationAction(
-          'snooze',
-          'תזכר מחר',
-          showsUserInterface: true,
-        ),
-      ],
-    );
+    for (var d = 0; d < followUpDays; d++) {
+      // בנייה לפי תאריך (ולא add של 24 שעות) כדי לא לזוז במעבר שעון.
+      final when = DateTime(first.year, first.month, first.day + d, h, m);
+      await _schedule(
+        followUpDayId(f.id, d),
+        '${_pfx(f.subjectId)}תזכורת: ${f.title}',
+        'סמן "בוצע" כשסיימת ואפסיק להזכיר',
+        when,
+        'followup:${f.id}',
+        actions: const [
+          AndroidNotificationAction('done', 'בוצע', showsUserInterface: true),
+          AndroidNotificationAction(
+            'snooze',
+            'תזכר מחר',
+            showsUserInterface: true,
+          ),
+        ],
+      );
+    }
   }
 
   /// נקרא בכל פתיחת אפליקציה: מוודא שכל התזכורות הפתוחות מתוזמנות.
+  /// גם מבטל תזכורות של תורים ומשימות שנמחקו או הושלמו (גם בטלפון אחר).
   Future<void> rescheduleAll() async {
     final db = AppDb.instance;
     for (final f in await db.openFollowUps()) {
       await scheduleFollowUp(f);
     }
+    for (final f in await db.closedFollowUps()) {
+      await cancelFollowUp(f);
+    }
     for (final a in await db.appointments(upcomingOnly: true)) {
       await scheduleAppointment(a);
+    }
+    for (final a in await db.inactiveUpcomingAppointments()) {
+      await cancelAppointment(a);
     }
   }
 }

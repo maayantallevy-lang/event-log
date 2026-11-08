@@ -92,7 +92,7 @@ class _LogSheetState extends State<_LogSheet> {
     if (type.isMed) {
       final d = values['dose'];
       textCtrls['dose'] = TextEditingController(
-        text: d == null ? '' : fmtNum(d as num),
+        text: d is num ? fmtNum(d) : '',
       );
     }
     if (mounted) setState(() => loading = false);
@@ -162,7 +162,9 @@ class _LogSheetState extends State<_LogSheet> {
       }
     }
     if (type.isMed) {
-      final n = double.tryParse(textCtrls['dose']!.text.trim());
+      final n = double.tryParse(
+        (textCtrls['dose']?.text ?? '').trim().replaceAll(',', '.'),
+      );
       if (n == null) {
         values.remove('dose');
       } else {
@@ -234,7 +236,7 @@ class _LogSheetState extends State<_LogSheet> {
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: saving ? null : _save,
+            onPressed: (saving || loading) ? null : _save,
             style: FilledButton.styleFrom(
               backgroundColor: color,
               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -265,7 +267,7 @@ class _LogSheetState extends State<_LogSheet> {
         ),
         for (final m in [5, 15, 30])
           ActionChip(
-            label: Text('-$m דק\''),
+            label: Text('לפני $m דק\''),
             onPressed: () =>
                 setState(() => when = when.subtract(Duration(minutes: m))),
           ),
@@ -351,7 +353,8 @@ class _LogSheetState extends State<_LogSheet> {
           ],
         );
       case FieldKind.multi:
-        final sel = ((values[key] as List?) ?? const [])
+        final raw = values[key];
+        final sel = (raw is List ? raw : (raw == null ? const [] : [raw]))
             .map((x) => x.toString())
             .toSet();
         return Column(
@@ -423,7 +426,7 @@ class _LogSheetState extends State<_LogSheet> {
     required double step,
   }) {
     void add(double d) {
-      final cur = double.tryParse(c.text.trim()) ?? 0;
+      final cur = double.tryParse(c.text.trim().replaceAll(',', '.')) ?? 0;
       final next = (cur + d).clamp(0, 100000);
       c.text = fmtNum(next);
     }

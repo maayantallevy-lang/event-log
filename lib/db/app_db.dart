@@ -7,6 +7,14 @@ import '../models.dart';
 import '../util/ids.dart';
 import 'templates.dart';
 
+/// snapshot שנכתב בגרסה חדשה יותר של האפליקציה.
+class NewerSchemaException implements Exception {
+  const NewerSchemaException();
+  @override
+  String toString() =>
+      'טלפון אחר מסונכרן עם גרסה חדשה יותר של יומנון - צריך לעדכן את האפליקציה';
+}
+
 /// שכבת הנתונים: SQLite דרך sqflite, SQL גולמי.
 ///
 /// סכימה v2 (D-11): לכל טבלה מסונכרנת יש id טקסטואלי גלובלי, updated_at
@@ -176,7 +184,7 @@ class AppDb {
   /// כתיבה מקומית: insert או replace, updated_at = עכשיו, deleted = 0.
   Future<void> upsert(String table, Map<String, Object?> row) async {
     final m = Map<String, Object?>.from(row);
-    m['updated_at'] = nowMs();
+    m['updated_at'] = await _tick();
     m['deleted'] = 0;
     await (await db).insert(
       table,
@@ -189,7 +197,7 @@ class AppDb {
   Future<void> softDelete(String table, String id) async {
     await (await db).update(
       table,
-      {'deleted': 1, 'updated_at': nowMs()},
+      {'deleted': 1, 'updated_at': await _tick()},
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -198,10 +206,35 @@ class AppDb {
   Future<void> restore(String table, String id) async {
     await (await db).update(
       table,
-      {'deleted': 0, 'updated_at': nowMs()},
+      {'deleted': 0, 'updated_at': await _tick()},
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // ---------- שעון לוגי (D-23) ----------
+  // updated_at = max(עכשיו, הגבוה ביותר שראינו + 1). כך עריכה חדשה תמיד
+  // "מנצחת" גרסה שכבר ראינו, גם אם השעון של הטלפון הזה מאחר.
+  int? _clock;
+
+  Future<int> _tick() async {
+    if (_clock == null) {
+      final d = await db;
+      var max = 0;
+      for (final t in syncedTables) {
+        final r = await d.rawQuery('SELECT MAX(updated_at) AS m FROM $t');
+        final v = (r.first['m'] as num?)?.toInt() ?? 0;
+        if (v > max) max = v;
+      }
+      _clock = max;
+    }
+    final now = nowMs();
+    _clock = now > _clock! ? now : _clock! + 1;
+    return _clock!;
+  }
+
+  void _observe(int ts) {
+    if (_clock != null && ts > _clock!) _clock = ts;
   }
 
   Future<Set<String>> _columnsOf(String table) async {
@@ -237,6 +270,11 @@ class AppDb {
     if (snap['format'] != 'event-log') {
       throw const FormatException('זה לא קובץ גיבוי של יומנון');
     }
+    final schema = (snap['schema'] as num?)?.toInt() ?? 1;
+    if (schema > schemaVersion) {
+      // גרסה חדשה יותר כתבה את זה: לא ממזגים כדי לא לאבד שדות שאנחנו לא מכירים.
+      throw const NewerSchemaException();
+    }
     final tables = (snap['tables'] as Map?) ?? {};
     final d = await db;
     var changed = 0;
@@ -254,6 +292,7 @@ class AppDb {
           final id = row['id'];
           if (id is! String) continue;
           final remoteTs = (row['updated_at'] as num?)?.toInt() ?? 0;
+          _observe(remoteTs);
           final local = await txn.query(
             t,
             columns: ['updated_at'],
@@ -619,6 +658,27 @@ class AppDb {
     return rows.map(FollowUp.fromMap).toList();
   }
 
+  /// משימות שנמחקו או הושלמו (כדי לבטל התראות שנשארו מתוזמנות).
+  Future<List<FollowUp>> closedFollowUps() async {
+    final rows = await (await db).query(
+      'follow_ups',
+      where: 'deleted = 1 OR done_at IS NOT NULL',
+    );
+    return rows.map(FollowUp.fromMap).toList();
+  }
+
+  /// תורים עתידיים שנמחקו או סומנו כבוצעו.
+  Future<List<Appointment>> inactiveUpcomingAppointments() async {
+    final rows = await (await db).query(
+      'appointments',
+      where: '(deleted = 1 OR done = 1) AND scheduled_at > ?',
+      whereArgs: [
+        DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch,
+      ],
+    );
+    return rows.map(Appointment.fromMap).toList();
+  }
+
   Future<FollowUp?> followUp(String id) async {
     final rows = await (await db).query(
       'follow_ups',
@@ -696,30 +756,34 @@ String describeValues(
     }
     return parts.join(' · ');
   }
+  // סובלני לנתונים שנשמרו כשלשאלה היה סוג תשובה אחר (המשתמש שינה אותו).
   final parts = <String>[];
   for (final f in t.fields) {
     final v = values[f.id];
     if (v == null) continue;
     switch (f.kind) {
       case FieldKind.single:
-        final o = f.options.where((o) => o.id == v);
+        final key = v is List
+            ? (v.isEmpty ? null : v.first.toString())
+            : v.toString();
+        final o = f.options.where((o) => o.id == key);
         if (o.isNotEmpty) parts.add(o.first.label);
         break;
       case FieldKind.multi:
-        final ids = (v as List).map((x) => x.toString()).toSet();
+        final ids = (v is List ? v : [v]).map((x) => x.toString()).toSet();
         final labels = f.options
             .where((o) => ids.contains(o.id))
             .map((o) => o.label);
         if (labels.isNotEmpty) parts.add(labels.join('+'));
         break;
       case FieldKind.number:
-        parts.add('${_fmtNum(v)} ${f.unit ?? ''}'.trim());
+        if (v is num) parts.add('${_fmtNum(v)} ${f.unit ?? ''}'.trim());
         break;
       case FieldKind.duration:
-        parts.add('${_fmtNum(v)} דק\'');
+        if (v is num) parts.add('${_fmtNum(v)} דק\'');
         break;
       case FieldKind.text:
-        if ((v as String).trim().isNotEmpty) parts.add(v.trim());
+        if (v is String && v.trim().isNotEmpty) parts.add(v.trim());
         break;
       case FieldKind.boolean:
         if (v == true) parts.add(f.label);

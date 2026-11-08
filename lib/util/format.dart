@@ -12,6 +12,18 @@ const _weekdays = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי
 
 String weekdayName(DateTime t) => _weekdays[t.weekday - 1];
 
+/// מספר + יחידה בעברית תקנית: "יום אחד" / "יומיים" / "5 ימים".
+String heCount(int n, String one, String two, String many) {
+  if (n == 1) return one;
+  if (n == 2) return two;
+  return '$n $many';
+}
+
+String heDays(int n) =>
+    n == 0 ? 'היום' : heCount(n, 'יום אחד', 'יומיים', 'ימים');
+String heWeeks(int n) => heCount(n, 'שבוע', 'שבועיים', 'שבועות');
+String heMonths(int n) => heCount(n, 'חודש', 'חודשיים', 'חודשים');
+
 /// "לפני 1:40" / "לפני 25 דק'" / "עכשיו"
 String ago(DateTime t, [DateTime? now]) {
   final n = now ?? DateTime.now();
@@ -22,7 +34,7 @@ String ago(DateTime t, [DateTime? now]) {
     return 'לפני ${d.inHours}:${two(d.inMinutes % 60)}';
   }
   if (d.inDays == 1) return 'אתמול ${fmtTime(t)}';
-  return 'לפני ${d.inDays} ימים';
+  return 'לפני ${heDays(d.inDays)}';
 }
 
 /// "בעוד 2:10" / "בעוד 3 ימים" / "עבר"
@@ -34,7 +46,7 @@ String until(DateTime t, [DateTime? now]) {
   if (d.inHours < 24) return 'בעוד ${d.inHours}:${two(d.inMinutes % 60)}';
   final days = d.inDays;
   if (days == 1) return 'מחר ${fmtTime(t)}';
-  return 'בעוד $days ימים';
+  return 'בעוד ${heDays(days)}';
 }
 
 /// כותרת יום ביומן: "היום · שבת 7.11" וכו'.
@@ -73,12 +85,13 @@ String elapsedText(DateTime start, String? kind, [DateTime? now]) {
   if (days < 0) return '';
   switch (kind) {
     case 'birth':
-      if (days < 14) return 'גיל $days ימים';
+      if (days == 0) return 'נולד/ה היום';
+      if (days < 14) return 'גיל ${heDays(days)}';
       if (days < 90) {
         final d = days % 7;
-        return 'גיל ${days ~/ 7} שבועות${d == 0 ? '' : ' ו-$d ימים'}';
+        return 'גיל ${heWeeks(days ~/ 7)}${d == 0 ? '' : ' ו-${heDays(d)}'}';
       }
-      if (days < 730) return 'גיל ${(days / 30.44).floor()} חודשים';
+      if (days < 730) return 'גיל ${heMonths((days / 30.44).floor())}';
       return 'גיל ${(days / 365.25).toStringAsFixed(1)} שנים';
     case 'pregnancy':
       final w = days ~/ 7;

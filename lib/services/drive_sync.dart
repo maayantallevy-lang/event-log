@@ -162,13 +162,28 @@ class DriveSync {
       final deviceId = await _db.deviceId;
       final myName = 'device-$deviceId.json';
       String? myFileId;
+      var newer = false;
       for (final f in await api.listJson(folderId)) {
         if (f.name == myName) {
           myFileId = f.id;
           continue;
         }
+        // קובץ שלא השתנה מאז הפעם הקודמת - לא מורידים שוב (חוסך סוללה ונתונים).
+        final seenKey = 'sync_seen_${f.id}';
+        if (f.modified.isNotEmpty &&
+            await _db.getSetting(seenKey) == f.modified) {
+          continue;
+        }
         final snap = await api.download(f.id);
-        if (snap != null) changed += await _db.merge(snap);
+        if (snap == null) continue;
+        try {
+          changed += await _db.merge(snap);
+          if (f.modified.isNotEmpty) {
+            await _db.setSetting(seenKey, f.modified);
+          }
+        } on NewerSchemaException {
+          newer = true;
+        }
       }
       final body = jsonEncode(await _db.snapshot());
       if (myFileId == null) {
@@ -181,7 +196,7 @@ class DriveSync {
       status.value = status.value.copyWith(
         syncing: false,
         lastSync: now,
-        error: null,
+        error: newer ? const NewerSchemaException().toString() : null,
       );
       if (changed > 0) await onRemoteChanges?.call();
     } on SyncError catch (e) {
@@ -253,7 +268,8 @@ class SyncStatus {
 class _DriveFile {
   final String id;
   final String name;
-  _DriveFile(this.id, this.name);
+  final String modified;
+  _DriveFile(this.id, this.name, this.modified);
 }
 
 /// Drive REST v3 מינימלי (בלי חבילת googleapis).
@@ -315,7 +331,7 @@ class _DriveApi {
         Uri.parse(_base).replace(
           queryParameters: {
             'q': "'$folderId' in parents and trashed = false",
-            'fields': 'nextPageToken,files(id,name)',
+            'fields': 'nextPageToken,files(id,name,modifiedTime)',
             'pageSize': '100',
             if (page != null) 'pageToken': page,
           },
@@ -327,7 +343,13 @@ class _DriveApi {
       for (final f in (j['files'] as List? ?? [])) {
         final name = f['name'] as String;
         if (name.startsWith('device-') && name.endsWith('.json')) {
-          out.add(_DriveFile(f['id'] as String, name));
+          out.add(
+            _DriveFile(
+              f['id'] as String,
+              name,
+              f['modifiedTime'] as String? ?? '',
+            ),
+          );
         }
       }
       page = j['nextPageToken'] as String?;

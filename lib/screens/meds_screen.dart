@@ -182,9 +182,13 @@ class _MedDialogState extends State<_MedDialog> {
               Med(
                 id: widget.existing?.id ?? newId(),
                 name: n,
-                defaultDose: double.tryParse(dose.text.trim()),
+                defaultDose: double.tryParse(
+                  dose.text.trim().replaceAll(',', '.'),
+                ),
                 unit: unit,
-                intervalHours: double.tryParse(interval.text.trim()),
+                intervalHours: double.tryParse(
+                  interval.text.trim().replaceAll(',', '.'),
+                ),
                 active: true,
                 subjectId:
                     widget.existing?.subjectId ?? AppState.instance.subjectId,

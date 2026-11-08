@@ -125,8 +125,11 @@ class AppState extends ChangeNotifier {
 
   // ---------- מבנה (סוגים, שדות, תרופות, נושא) ----------
 
+  /// אחרי שינוי מבנה (סוג הוסתר, מרווח תזכורת שונה, תרופה הופסקה):
+  /// טעינה מחדש ותזמון מחדש, כדי שתזכורת ישנה לא תמשיך לצלצל.
   Future<void> reloadStructure() async {
     await load();
+    await rescheduleEverything();
     sync.requestSync();
   }
 
@@ -174,7 +177,7 @@ class AppState extends ChangeNotifier {
       await db.softDelete('appointments', a.id);
     }
     for (final f in await db.openFollowUps(subjectId: s.id)) {
-      await n.cancel(Notifications.followUpId(f.id));
+      await n.cancelFollowUp(f);
       await db.softDelete('follow_ups', f.id);
     }
     await db.deleteSubject(s.id);
@@ -273,12 +276,12 @@ class AppState extends ChangeNotifier {
   Future<void> completeFollowUp(FollowUp f) async {
     f.doneAt = DateTime.now();
     await db.saveFollowUp(f);
-    await Notifications.instance.cancel(Notifications.followUpId(f.id));
+    await Notifications.instance.cancelFollowUp(f);
     _changed();
   }
 
   Future<void> deleteFollowUp(FollowUp f) async {
-    await Notifications.instance.cancel(Notifications.followUpId(f.id));
+    await Notifications.instance.cancelFollowUp(f);
     await db.deleteFollowUp(f.id);
     _changed();
   }

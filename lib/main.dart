@@ -19,8 +19,13 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final state = AppState.instance;
   await state.load();
-  await Notifications.instance.init();
-  await Notifications.instance.rescheduleAll();
+  // תקלה בהתראות לא תשאיר את האפליקציה תקועה במסך הפתיחה.
+  try {
+    await Notifications.instance.init();
+    await state.rescheduleEverything();
+  } catch (e) {
+    debugPrint('notifications init failed: $e');
+  }
   state.sync.onRemoteChanges = state.onRemoteChanges;
   unawaited(state.sync.start());
   runApp(const EventLogApp());
@@ -105,7 +110,8 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
       case 'log':
         final t = state.typeById[tap.id];
         if (t == null) return;
-        if (tap.actionId == 'done') {
+        final needsAnswers = t.fields.any((f) => f.required);
+        if (tap.actionId == 'done' && !needsAnswers) {
           await state.saveEvent(state.newEvent(t.id));
           _snack('נרשם: ${t.name}');
         } else if (tap.actionId == 'snooze') {

@@ -130,10 +130,13 @@ class _StatsScreenState extends State<StatsScreen> {
       if (e.timestamp.isBefore(from) || !e.timestamp.isBefore(to)) continue;
       final int idx = range == StatRange.day
           ? e.timestamp.difference(from).inHours
-          : logicalDayStart(
-              e.timestamp,
-              state.dayStartHour,
-            ).difference(from).inDays;
+          // round ולא inDays: ביום של מעבר שעון יש 23 או 25 שעות.
+          : (logicalDayStart(
+                      e.timestamp,
+                      state.dayStartHour,
+                    ).difference(from).inHours /
+                    24)
+                .round();
       if (idx < 0 || idx >= list.length) continue;
       final b = list[idx];
       b.count++;

@@ -613,7 +613,9 @@ class _TypeDialogState extends State<_TypeDialog> {
                 color: color,
                 sortOrder: t.sortOrder,
                 builtinKind: t.builtinKind,
-                intervalReminderHours: double.tryParse(interval.text.trim()),
+                intervalReminderHours: double.tryParse(
+                  interval.text.trim().replaceAll(',', '.'),
+                ),
                 statFieldId: t.statFieldId,
                 statAgg: t.statAgg,
                 hidden: t.hidden,

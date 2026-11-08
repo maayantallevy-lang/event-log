@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../app_state.dart';
 import '../models.dart';
 import '../services/drive_sync.dart';
+import '../services/notifications.dart';
 import '../util/format.dart';
 import '../widgets/journal_picker.dart';
 import 'appearance_screen.dart';
@@ -331,6 +332,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context,
               MaterialPageRoute(builder: (_) => const MedsScreen()),
             ),
+          ),
+          FutureBuilder<bool>(
+            future: Notifications.instance.notificationsEnabled(),
+            builder: (context, snap) {
+              final on = snap.data ?? true;
+              final exact = Notifications.instance.exactAllowed;
+              final ok = on && exact;
+              return ListTile(
+                leading: Icon(
+                  ok
+                      ? Icons.notifications_active_outlined
+                      : Icons.notifications_off_outlined,
+                  color: ok ? null : Theme.of(context).colorScheme.error,
+                ),
+                title: const Text('התראות ותזכורות'),
+                subtitle: Text(
+                  !on
+                      ? 'ההתראות כבויות - לחיצה כדי להפעיל'
+                      : exact
+                      ? 'פועלות בזמן מדויק'
+                      : 'עלולות לאחר בכמה דקות - לחיצה כדי לאשר זמן מדויק',
+                ),
+                onTap: ok
+                    ? null
+                    : () async {
+                        if (!on) {
+                          await Notifications.instance.requestNotifications();
+                        } else {
+                          await Notifications.instance.requestExactAlarms();
+                          await state.rescheduleEverything();
+                        }
+                        if (mounted) setState(() {});
+                      },
+              );
+            },
           ),
           ListTile(
             leading: const Icon(Icons.palette_outlined),
