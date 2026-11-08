@@ -5,7 +5,8 @@
 ## איפה הקוד
 - GitHub: https://github.com/maayantallevy-lang/event-log (ענף main; לשעבר baby-log). זה הקוד הרץ.
 - Drive (SSOT לתיעוד וגיבוי): תיקיית "יומן אירועים" - `01 מסמכי יסוד` (המסמכים האלה), `02 קוד` (עותק של כל קובץ מקור; פונטים לא - ראו README שם), `03 הדגמה` (דף HTML להדגמה), `04 מיתוג` (לוגואים SVG), `08 פריסה ותפעול` (קישורי Release והתקנה).
-- APK: GitHub Releases של הריפו (כל push ל-main בונה, חותם ומפרסם Release עם APK ו-sha256).
+- APK + AAB: GitHub Releases של הריפו (כל push ל-main בונה, חותם ומפרסם Release).
+- גוגל פליי (D-21): מסלול בדיקה פנימית, קישור הצטרפות https://play.google.com/apps/internaltest/4701167873101091238. גרסה ראשונה 0.3.1 (13) שוחררה 2026-11-08. העלאת AAB כרגע ידנית (60MB - גדול מדי להעלאה דרך הכרום של Claude).
 
 ## איך משחזרים סביבה
 ```bash
@@ -33,6 +34,7 @@ flutter pub get && flutter analyze && flutter build apk --release
 - רץ: S3 - v0.3.0 "יומנון": 4 סקינים, 5 פונטים מקומיים (assets/fonts), מסך "מראה". לוגו: נבחרה הצעה B (ציר זמן), מוטמע כאייקון (D-20). מקור: `04 מיתוג` בדרייב, לוח עיצוב https://claude.ai/artifact/6pTMYHb4URBVLGKjd9EypG.
 
 ## הצעד הבא
+- להעלות גרסאות לגוגל פליי אוטומטית מה-CI (חשבון שירות + Google Play Developer API).
 - המבקש מסיר את v0.1 (מזהה וחתימה שונים), מתקין את הגרסה האחרונה מ-Releases, בוחר "בגוגל דרייב שלי" ומדווח.
 - אחר כך: ווידג'ט, אנגלית, AdMob.
 
