@@ -1,6 +1,6 @@
 # RESTORE - נקודת עצירה (יומנון)
 
-עודכן: 2026-11-07 | commit: ראו `git log -1` ב-main | ספרינט: 3 (מיתוג: יומנון, סקינים, פונטים)
+עודכן: 2026-11-07 | commit: ראו `git log -1` ב-main | ספרינט: 4 (יומנים מרובים + תיקוני אודיט)
 
 ## איפה הקוד
 - GitHub: https://github.com/maayantallevy-lang/event-log (ענף main; לשעבר baby-log). זה הקוד הרץ.
@@ -23,8 +23,8 @@ flutter pub get && flutter analyze && flutter build apk --release
 - SHA-1: 8A:2A:9E:4C:99:59:18:E3:58:00:2F:B4:21:10:97:2C:50:38:70:B3
 
 ## Google Cloud (סנכרון Drive, D-13)
-- פרויקט: `event-log-514014` (חשבון המבקש). Drive API פעיל. מסך הסכמה: External, Testing, משתמש בדיקה: חשבון המבקש בלבד.
-- OAuth Android: חבילה `il.co.maayan.eventlog` + SHA-1 למעלה.
+- פרויקט: `event-log-514014` (חשבון המבקש). Drive API פעיל. מסך הסכמה: External, Testing, משתמשי בדיקה: maayan.tal.levy, tal.pd.al, mayu6543 (@gmail.com).
+- OAuth Android: חבילה `il.co.maayan.eventlog`, שני לקוחות: SHA-1 של מפתח ההעלאה (למעלה) ו-SHA-1 של חתימת גוגל פליי `3A:61:31:FC:0A:09:D7:2A:AE:E4:C0:32:47:44:5C:1B:A2:E1:20:38` (להתקנות מהחנות).
 - OAuth Web (serverClientId): `494572279154-3pkmvau9hqa3gorvq0jg2kotvojj498o.apps.googleusercontent.com` - מוטבע ב-`lib/services/drive_sync.dart`. לא סוד.
 - מגבלה: בסטטוס Testing רק משתמשי בדיקה יכולים להתחבר. לשיתוף עם אחרים: להוסיף אותם כמשתמשי בדיקה או לעבור לאימות.
 
@@ -32,6 +32,10 @@ flutter pub get && flutter analyze && flutter build apk --release
 - ירוק: S0, S1 (MVP תינוק, v0.1).
 - ירוק: S2 - v0.2.0 כללי (תבניות: תינוק/הריון/בריאות/ריק), סכימה v2 עם מזהים גלובליים, סנכרון Drive. לא נבדק על מכשיר.
 - רץ: S3 - v0.3.0 "יומנון": 4 סקינים, 5 פונטים מקומיים (assets/fonts), מסך "מראה". לוגו: נבחרה הצעה B (ציר זמן), מוטמע כאייקון (D-20). מקור: `04 מיתוג` בדרייב, לוח עיצוב https://claude.ai/artifact/6pTMYHb4URBVLGKjd9EypG.
+
+## מצב נוסף
+- ירוק ב-CI: 0.4.0 (build 18) - יומנים מרובים (D-22), תיקוני אודיט (D-23), סטטיסטיקה ותזכורות חדשות (D-24). עוד לא בגוגל פליי.
+- אודיט: docs/04-AUDIT-2026-11-09.md (מה תוקן ומה פתוח).
 
 ## הצעד הבא
 - להעלות גרסאות לגוגל פליי אוטומטית מה-CI (חשבון שירות + Google Play Developer API).
