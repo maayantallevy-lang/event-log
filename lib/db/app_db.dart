@@ -16,7 +16,7 @@ class AppDb {
   AppDb._();
   static final AppDb instance = AppDb._();
 
-  static const schemaVersion = 2;
+  static const schemaVersion = 3;
 
   Database? _db;
   final Map<String, Set<String>> _columns = {};
@@ -28,6 +28,7 @@ class AppDb {
       p.join(dir, 'event_log.db'),
       version: schemaVersion,
       onCreate: _create,
+      onUpgrade: _upgrade,
     );
     return _db!;
   }
@@ -42,11 +43,14 @@ class AppDb {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         start_date INTEGER,
-        start_kind TEXT,$_sync
+        start_kind TEXT,
+        template TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,$_sync
       )''');
     await d.execute('''
       CREATE TABLE event_types (
         id TEXT PRIMARY KEY,
+        subject_id TEXT,
         name TEXT NOT NULL,
         icon TEXT NOT NULL,
         color INTEGER NOT NULL,
@@ -80,6 +84,7 @@ class AppDb {
     await d.execute('''
       CREATE TABLE meds (
         id TEXT PRIMARY KEY,
+        subject_id TEXT,
         name TEXT NOT NULL,
         default_dose REAL,
         unit TEXT,
@@ -116,6 +121,7 @@ class AppDb {
     await d.execute('''
       CREATE TABLE follow_ups (
         id TEXT PRIMARY KEY,
+        subject_id TEXT,
         appointment_id TEXT,
         kind TEXT NOT NULL,
         title TEXT NOT NULL,
@@ -132,6 +138,37 @@ class AppDb {
     // אין seed כאן: מסך הפתיחה מבקש לבחור תבנית (או מתחבר לדרייב קיים).
     await d.insert('settings', {'key': 'day_start_hour', 'value': '7'});
     await d.insert('settings', {'key': 'device_id', 'value': newId()});
+  }
+
+  /// v3 (D-22): יומנים מרובים. subject_id לסוגים, תרופות ומשימות מעקב.
+  /// נתונים קיימים משויכים ליומן הראשון בלי לשנות updated_at, כדי שהשיוך
+  /// לא "ינצח" עריכות ממכשירים אחרים.
+  Future<void> _upgrade(Database d, int from, int to) async {
+    if (from < 3) {
+      await d.execute('ALTER TABLE subjects ADD COLUMN template TEXT');
+      await d.execute(
+        'ALTER TABLE subjects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0',
+      );
+      for (final t in ['event_types', 'meds', 'follow_ups']) {
+        await d.execute('ALTER TABLE $t ADD COLUMN subject_id TEXT');
+      }
+      final first = await d.query(
+        'subjects',
+        columns: ['id'],
+        where: 'deleted = 0',
+        orderBy: 'id',
+        limit: 1,
+      );
+      if (first.isNotEmpty) {
+        final id = first.first['id'];
+        for (final t in ['event_types', 'meds', 'follow_ups']) {
+          await d.rawUpdate(
+            'UPDATE $t SET subject_id = ? WHERE subject_id IS NULL',
+            [id],
+          );
+        }
+      }
+    }
   }
 
   // ---------- כתיבה גנרית ----------
@@ -227,11 +264,13 @@ class AppDb {
               ? -1
               : (local.first['updated_at'] as int? ?? 0);
           if (remoteTs > localTs) {
-            await txn.insert(
-              t,
-              row,
-              conflictAlgorithm: ConflictAlgorithm.replace,
-            );
+            if (local.isEmpty) {
+              await txn.insert(t, row);
+            } else {
+              // update ולא replace: עמודה שמכשיר בגרסה ישנה לא מכיר
+              // (למשל subject_id) נשארת כמו שהיא.
+              await txn.update(t, row, where: 'id = ?', whereArgs: [id]);
+            }
             changed++;
           }
         }
@@ -278,7 +317,17 @@ class AppDb {
 
   // ---------- נושא היומן ----------
 
-  /// null = עוד לא הוגדר (מסך הפתיחה לא הושלם ולא הגיע כלום מהדרייב).
+  /// כל היומנים, לפי הסדר. ריק = עוד לא הוגדר (מסך הפתיחה לא הושלם).
+  Future<List<Subject>> subjects() async {
+    final rows = await (await db).query(
+      'subjects',
+      where: 'deleted = 0',
+      orderBy: 'sort_order, id',
+    );
+    return rows.map(Subject.fromMap).toList();
+  }
+
+  /// היומן הראשון (לפי id) - אליו משויכים נתונים ישנים בלי subject_id.
   Future<Subject?> currentSubject() async {
     final rows = await (await db).query(
       'subjects',
@@ -291,23 +340,47 @@ class AppDb {
 
   Future<void> saveSubject(Subject s) => upsert('subjects', s.toMap());
 
-  /// יוצר יומן חדש מתבנית: נושא + סוגי האירועים שלה.
-  Future<Subject> createFromTemplate(Template tpl, {String? name}) async {
+  Future<void> deleteSubject(String id) => softDelete('subjects', id);
+
+  /// יוצר יומן חדש מתבנית: נושא + סוגי האירועים שלה, משויכים אליו.
+  Future<Subject> createFromTemplate(
+    Template tpl, {
+    String? name,
+    DateTime? startDate,
+  }) async {
     final d = await db;
-    await applyTemplate(d, tpl);
-    final existing = await currentSubject();
-    if (existing != null) return existing;
+    final count = (await subjects()).length;
     final s = Subject(
       id: newId(),
       name: (name == null || name.trim().isEmpty) ? tpl.subjectName : name,
       startKind: tpl.startKind,
+      startDate: tpl.startKind == null ? null : startDate,
+      template: tpl.key,
+      sortOrder: count,
     );
     await saveSubject(s);
+    await applyTemplate(d, tpl, subjectId: s.id, idPrefix: '${s.id}:');
     return s;
   }
 
-  Future<void> addTemplateTypes(Template tpl) async =>
-      applyTemplate(await db, tpl);
+  /// הוספת סוגי תבנית ליומן קיים. ביומן ישן (מזהים "tpl-...") בלי קידומת,
+  /// כדי לא לשכפל סוגים שכבר קיימים.
+  Future<void> addTemplateTypes(Template tpl, String subjectId) async {
+    final d = await db;
+    final legacy = await d.query(
+      'event_types',
+      columns: ['id'],
+      where: "subject_id = ? AND id LIKE 'tpl-%'",
+      whereArgs: [subjectId],
+      limit: 1,
+    );
+    await applyTemplate(
+      d,
+      tpl,
+      subjectId: subjectId,
+      idPrefix: legacy.isNotEmpty ? '' : '$subjectId:',
+    );
+  }
 
   // ---------- סוגי אירועים ----------
 
@@ -387,6 +460,7 @@ class AppDb {
   Future<void> restoreEvent(String id) => restore('events', id);
 
   Future<List<LogEvent>> events({
+    String? subjectId,
     DateTime? from,
     DateTime? to,
     Set<String>? typeIds,
@@ -394,6 +468,10 @@ class AppDb {
   }) async {
     final where = <String>['deleted = 0'];
     final args = <Object?>[];
+    if (subjectId != null) {
+      where.add('subject_id = ?');
+      args.add(subjectId);
+    }
     if (from != null) {
       where.add('timestamp >= ?');
       args.add(from.millisecondsSinceEpoch);
@@ -458,11 +536,16 @@ class AppDb {
   // ---------- תורים ----------
 
   Future<List<Appointment>> appointments({
+    String? subjectId,
     bool upcomingOnly = false,
     DateTime? from,
   }) async {
     final where = <String>['deleted = 0'];
     final args = <Object?>[];
+    if (subjectId != null) {
+      where.add('subject_id = ?');
+      args.add(subjectId);
+    }
     if (upcomingOnly) {
       where.add('scheduled_at >= ? AND done = 0');
       args.add(
@@ -494,11 +577,18 @@ class AppDb {
   }
 
   /// תורים שעברו ועדיין לא נשאל עליהם שאלון הסיכום.
-  Future<List<Appointment>> appointmentsAwaitingFollowUp() async {
+  Future<List<Appointment>> appointmentsAwaitingFollowUp([
+    String? subjectId,
+  ]) async {
     final rows = await (await db).query(
       'appointments',
-      where: 'deleted = 0 AND scheduled_at < ? AND follow_up_asked = 0',
-      whereArgs: [DateTime.now().millisecondsSinceEpoch],
+      where:
+          'deleted = 0 AND scheduled_at < ? AND follow_up_asked = 0'
+          '${subjectId == null ? '' : ' AND subject_id = ?'}',
+      whereArgs: [
+        DateTime.now().millisecondsSinceEpoch,
+        if (subjectId != null) subjectId,
+      ],
       orderBy: 'scheduled_at DESC',
     );
     return rows.map(Appointment.fromMap).toList();
@@ -511,10 +601,19 @@ class AppDb {
 
   // ---------- מעקב (follow-ups) ----------
 
-  Future<List<FollowUp>> openFollowUps() async {
+  /// משימות פתוחות. עם [subjectId]: של היומן הזה (וגם ישנות בלי יומן,
+  /// כשזה היומן הראשון [includeUnassigned]).
+  Future<List<FollowUp>> openFollowUps({
+    String? subjectId,
+    bool includeUnassigned = false,
+  }) async {
     final rows = await (await db).query(
       'follow_ups',
-      where: 'deleted = 0 AND done_at IS NULL',
+      where: subjectId == null
+          ? 'deleted = 0 AND done_at IS NULL'
+          : 'deleted = 0 AND done_at IS NULL AND (subject_id = ?'
+                '${includeUnassigned ? ' OR subject_id IS NULL' : ''})',
+      whereArgs: subjectId == null ? null : [subjectId],
       orderBy: 'created_at',
     );
     return rows.map(FollowUp.fromMap).toList();

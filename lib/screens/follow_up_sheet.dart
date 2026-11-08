@@ -64,6 +64,7 @@ class _FollowUpSheetState extends State<_FollowUpSheet> {
         await state.addFollowUp(
           FollowUp(
             id: newId(),
+            subjectId: a.subjectId,
             appointmentId: a.id,
             kind: FollowUpKind.buyMed,
             title: name.isEmpty ? 'לקנות את התרופה מהמרשם' : 'לקנות: $name',
@@ -75,7 +76,9 @@ class _FollowUpSheetState extends State<_FollowUpSheet> {
             (m) => m.name.trim().toLowerCase() == name.toLowerCase(),
           );
           if (!exists) {
-            await state.db.saveMed(Med(id: newId(), name: name));
+            await state.db.saveMed(
+              Med(id: newId(), name: name, subjectId: a.subjectId),
+            );
             await state.reloadStructure();
           }
         }
@@ -85,6 +88,7 @@ class _FollowUpSheetState extends State<_FollowUpSheet> {
         await state.addFollowUp(
           FollowUp(
             id: newId(),
+            subjectId: a.subjectId,
             appointmentId: a.id,
             kind: FollowUpKind.bookAppointment,
             title: what.isEmpty ? 'לקבוע תור לפי ההפניה' : 'לקבוע תור: $what',

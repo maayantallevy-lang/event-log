@@ -13,7 +13,9 @@ import '../util/format.dart';
 /// במצב דרייב, אם כבר יש יומן בחשבון (טלפון נוסף / התקנה מחדש) -
 /// הנתונים יורדים מהדרייב ושלב 2 מדולג.
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key});
+  /// true = הוספת יומן נוסף (מדלג על שלב האחסון וחוזר אחורה בסיום).
+  final bool addJournal;
+  const OnboardingScreen({super.key, this.addJournal = false});
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -21,7 +23,7 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final state = AppState.instance;
-  int step = 0;
+  late int step = widget.addJournal ? 1 : 0;
   bool busy = false;
   String? error;
   Template selected = templates.first;
@@ -80,27 +82,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Future<void> _create() async {
     setState(() => busy = true);
-    final s = await state.db.createFromTemplate(
+    await state.createJournal(
       selected,
       name: nameCtrl.text.trim(),
+      startDate: startDate,
     );
-    if (startDate != null && selected.startKind != null) {
-      await state.db.saveSubject(
-        Subject(
-          id: s.id,
-          name: s.name,
-          startKind: selected.startKind,
-          startDate: startDate,
-        ),
-      );
-    }
-    await state.load();
-    state.sync.requestSync();
+    if (widget.addJournal && mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: widget.addJournal ? AppBar(title: const Text('יומן חדש')) : null,
       body: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 250),
@@ -254,7 +247,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: const Text('יאללה, מתחילים', style: TextStyle(fontSize: 18)),
+          child: Text(
+            widget.addJournal ? 'יצירת היומן' : 'יאללה, מתחילים',
+            style: const TextStyle(fontSize: 18),
+          ),
         ),
       ],
     );

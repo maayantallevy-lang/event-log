@@ -186,6 +186,8 @@ class _MedDialogState extends State<_MedDialog> {
                 unit: unit,
                 intervalHours: double.tryParse(interval.text.trim()),
                 active: true,
+                subjectId:
+                    widget.existing?.subjectId ?? AppState.instance.subjectId,
               ),
             );
           },

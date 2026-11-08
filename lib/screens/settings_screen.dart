@@ -10,6 +10,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../services/drive_sync.dart';
 import '../util/format.dart';
+import '../widgets/journal_picker.dart';
 import 'appearance_screen.dart';
 import 'event_types_screen.dart';
 import 'meds_screen.dart';
@@ -129,8 +130,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
         name: ctrl.text.trim().isEmpty ? subj.name : ctrl.text.trim(),
         startKind: kind,
         startDate: kind == null ? null : start,
+        template: subj.template,
+        sortOrder: subj.sortOrder,
       ),
     );
+  }
+
+  Future<void> _deleteJournal() async {
+    final subj = state.subject;
+    if (subj == null || !state.hasManyJournals) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('למחוק את היומן "${subj.name}"?'),
+        content: const Text(
+          'כל האירועים, התורים, התרופות והכפתורים של היומן הזה יימחקו, '
+          'גם מהטלפונים האחרים שמסונכרנים. היומנים האחרים לא ייפגעו.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('ביטול'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(c).colorScheme.error,
+              foregroundColor: Theme.of(c).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('מחיקה'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await state.deleteJournal(subj);
   }
 
   Future<void> _editDayStart() async {
@@ -256,6 +289,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             onTap: _editSubject,
           ),
+          ListTile(
+            leading: const Icon(Icons.library_books_outlined),
+            title: const Text('היומנים שלי'),
+            subtitle: Text(
+              state.hasManyJournals
+                  ? '${state.subjects.length} יומנים · מעבר ויומן חדש'
+                  : 'יומן חדש: תינוק, הריון, תרופות - כל אחד בנפרד',
+            ),
+            onTap: () => showJournalPicker(context),
+          ),
+          if (state.hasManyJournals)
+            ListTile(
+              leading: Icon(
+                Icons.delete_outline,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                'מחיקת היומן "${subj?.name ?? ''}"',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              onTap: _deleteJournal,
+            ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.grid_view),

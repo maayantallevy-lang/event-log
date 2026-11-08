@@ -112,13 +112,16 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
           await Notifications.instance.snoozeType(t);
           _snack('אזכיר בעוד 15 דקות');
         } else {
+          await state.showJournalOf(t.subjectId);
           if (mounted) showLogSheet(context, t);
         }
         break;
       case 'med':
         final m = state.medById[tap.id];
+        if (m == null) return;
+        await state.showJournalOf(m.subjectId);
         final medType = state.medType;
-        if (m == null || medType == null) return;
+        if (medType == null) return;
         if (tap.actionId == 'done') {
           await state.saveEvent(
             state.newEvent(
@@ -136,12 +139,15 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
         break;
       case 'appt':
         final a = await db.appointment(tap.id);
-        if (a != null && mounted) openAppointment(context, a);
+        if (a == null) return;
+        await state.showJournalOf(a.subjectId);
+        if (mounted) openAppointment(context, a);
         break;
       case 'ask':
         final a = await db.appointment(tap.id);
-        if (a != null && !a.followUpAsked && mounted) {
-          showFollowUpSheet(context, a);
+        if (a != null && !a.followUpAsked) {
+          await state.showJournalOf(a.subjectId);
+          if (mounted) showFollowUpSheet(context, a);
         }
         break;
       case 'followup':
@@ -153,6 +159,7 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
         } else {
           // 'snooze' או לחיצה רגילה: ההתראה הבאה היא מחר באותה שעה.
           await Notifications.instance.scheduleFollowUp(f);
+          await state.showJournalOf(f.subjectId);
           setState(() => index = 0);
         }
         break;

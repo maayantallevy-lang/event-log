@@ -363,34 +363,48 @@ Template templateByKey(String key) =>
 
 const _ts = 1;
 
-/// מוסיף את סוגי התבנית למסד (סוג שכבר קיים - לא נדרס).
-Future<void> applyTemplate(DatabaseExecutor d, Template tpl) async {
+/// מוסיף את סוגי התבנית ליומן [subjectId] (סוג שכבר קיים - לא נדרס).
+/// [idPrefix] מבדיל בין יומנים שנוצרו מאותה תבנית (ריק = מזהים ישנים "tpl-...").
+Future<void> applyTemplate(
+  DatabaseExecutor d,
+  Template tpl, {
+  required String subjectId,
+  String idPrefix = '',
+}) async {
   Future<void> row(String table, Map<String, Object?> m) => d.insert(table, {
     ...m,
     'updated_at': _ts,
     'deleted': 0,
   }, conflictAlgorithm: ConflictAlgorithm.ignore);
 
-  final existing = await d.query('event_types', columns: ['sort_order']);
+  final existing = await d.query(
+    'event_types',
+    columns: ['id'],
+    where: 'subject_id = ?',
+    whereArgs: [subjectId],
+  );
   var order = existing.length;
   for (final t in tpl.types) {
+    final typeId = '$idPrefix${t.id}';
     await row('event_types', {
-      'id': t.id,
+      'id': typeId,
+      'subject_id': subjectId,
       'name': t.name,
       'icon': t.icon,
       'color': t.color,
       'sort_order': order++,
       'builtin_kind': t.builtin,
       'interval_reminder_hours': t.interval,
-      'stat_field_id': t.statField,
+      'stat_field_id': t.statField == null ? null : '$idPrefix${t.statField}',
       'stat_agg': t.statAgg,
       'hidden': t.hidden ? 1 : 0,
     });
     for (var i = 0; i < t.fields.length; i++) {
       final f = t.fields[i];
+      final fieldId = '$idPrefix${f.id}';
       await row('event_fields', {
-        'id': f.id,
-        'type_id': t.id,
+        'id': fieldId,
+        'type_id': typeId,
         'label': f.label,
         'kind': f.kind,
         'unit': f.unit,
@@ -400,8 +414,8 @@ Future<void> applyTemplate(DatabaseExecutor d, Template tpl) async {
       });
       for (var j = 0; j < f.options.length; j++) {
         await row('field_options', {
-          'id': '${f.id}-o$j',
-          'field_id': f.id,
+          'id': '$fieldId-o$j',
+          'field_id': fieldId,
           'label': f.options[j],
           'sort_order': j,
           'hidden': 0,

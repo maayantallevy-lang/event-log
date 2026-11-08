@@ -45,6 +45,12 @@ class _LogScreenState extends State<LogScreen> {
   }
 
   Future<void> _load() async {
+    // אחרי מעבר יומן: סינון לפי סוג של יומן אחר כבר לא רלוונטי.
+    if (filterType != null &&
+        filterType != _appts &&
+        !state.types.any((t) => t.id == filterType)) {
+      filterType = null;
+    }
     final now = DateTime.now();
     final from = rangeDays == 0
         ? null
@@ -55,13 +61,17 @@ class _LogScreenState extends State<LogScreen> {
     final list = <_Item>[];
     if (filterType == null || filterType != _appts) {
       final evs = await state.db.events(
+        subjectId: state.subjectId,
         from: from,
         typeIds: filterType == null ? null : {filterType!},
       );
       list.addAll(evs.map(_Item.event));
     }
     if (filterType == null || filterType == _appts) {
-      final appts = await state.db.appointments(from: from);
+      final appts = await state.db.appointments(
+        subjectId: state.subjectId,
+        from: from,
+      );
       list.addAll(appts.map(_Item.appt));
     }
     list.sort((a, b) => b.at.compareTo(a.at));

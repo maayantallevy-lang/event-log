@@ -1,13 +1,16 @@
 import 'package:flutter/foundation.dart';
 
 import 'db/app_db.dart';
+import 'db/templates.dart';
 import 'models.dart';
 import 'services/drive_sync.dart';
 import 'services/notifications.dart';
 import 'theme/skins.dart';
 import 'util/ids.dart';
 
-/// מצב גלובלי קל: נושא היומן, סוגי אירועים, תרופות, הגדרות.
+/// מצב גלובלי קל: היומנים, היומן הנוכחי, סוגי אירועים, תרופות, הגדרות.
+/// אפשר כמה יומנים במקביל (D-22); המסכים מציגים את היומן הנוכחי,
+/// והתזכורות פועלות לכל היומנים.
 /// כל שינוי בנתונים: כתיבה למסד, עדכון תזכורות, בקשת סנכרון, רענון מסכים.
 class AppState extends ChangeNotifier {
   AppState._();
@@ -16,19 +19,46 @@ class AppState extends ChangeNotifier {
   final db = AppDb.instance;
   final sync = DriveSync.instance;
 
+  /// כל היומנים.
+  List<Subject> subjects = [];
+
+  /// היומן המוצג כרגע.
+  Subject? subject;
+
+  /// סוגים ותרופות של כל היומנים (לתזכורות) ושל היומן הנוכחי (למסכים).
+  List<EventType> allTypes = [];
+  List<Med> allMeds = [];
   List<EventType> types = [];
   List<Med> meds = [];
-  Subject? subject;
   int dayStartHour = 7;
 
   /// סקין ופונט. נפרד מ-notifyListeners כדי שתיעוד אירוע לא יבנה מחדש את כל האפליקציה.
   final appearance = ValueNotifier<Appearance>(Appearance.initial);
 
-  Map<String, EventType> get typeById => {for (final t in types) t.id: t};
-  Map<String, Med> get medById => {for (final m in meds) m.id: m};
+  Map<String, EventType> get typeById => {for (final t in allTypes) t.id: t};
+  Map<String, Med> get medById => {for (final m in allMeds) m.id: m};
   List<EventType> get visibleTypes => types.where((t) => !t.hidden).toList();
   bool get isSetUp => subject != null;
   String get subjectId => subject?.id ?? 'none';
+  bool get hasManyJournals => subjects.length > 1;
+
+  /// היומן הראשון: אליו שייכים נתונים ישנים בלי subject_id.
+  String? get _firstId {
+    if (subjects.isEmpty) return null;
+    final ids = subjects.map((s) => s.id).toList()..sort();
+    return ids.first;
+  }
+
+  /// לאיזה יומן שייך פריט עם subject_id (null = היומן הראשון).
+  String? ownerOf(String? subjectId) => subjectId ?? _firstId;
+
+  Subject? subjectById(String? id) {
+    final key = ownerOf(id);
+    for (final s in subjects) {
+      if (s.id == key) return s;
+    }
+    return null;
+  }
 
   EventType? get medType {
     for (final t in types) {
@@ -38,9 +68,24 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> load() async {
-    types = await db.eventTypes();
-    meds = await db.meds();
-    subject = await db.currentSubject();
+    subjects = await db.subjects();
+    final wanted = await db.getSetting('current_subject');
+    subject = subjects.isEmpty
+        ? null
+        : subjects.firstWhere(
+            (s) => s.id == wanted,
+            orElse: () => subjects.first,
+          );
+    allTypes = await db.eventTypes();
+    allMeds = await db.meds();
+    final cur = subject?.id;
+    types = allTypes.where((t) => ownerOf(t.subjectId) == cur).toList();
+    meds = allMeds.where((m) => ownerOf(m.subjectId) == cur).toList();
+    Notifications.journalPrefix = {
+      if (hasManyJournals)
+        for (final s in subjects) s.id: '${s.name} · ',
+    };
+    Notifications.firstJournalId = _firstId;
     dayStartHour = await db.dayStartHour;
     appearance.value = Appearance(
       Skin.byKey(await db.getSetting('skin')),
@@ -72,7 +117,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> rescheduleEverything() async {
-    for (final t in types) {
+    for (final t in allTypes) {
       await _afterEventChange(t.id);
     }
     await Notifications.instance.rescheduleAll();
@@ -90,11 +135,71 @@ class AppState extends ChangeNotifier {
     await reloadStructure();
   }
 
+  // ---------- יומנים מרובים ----------
+
+  Future<void> switchJournal(String id) async {
+    await db.setSetting('current_subject', id);
+    await load();
+  }
+
+  Future<Subject> createJournal(
+    Template tpl, {
+    String? name,
+    DateTime? startDate,
+  }) async {
+    final s = await db.createFromTemplate(
+      tpl,
+      name: name,
+      startDate: startDate,
+    );
+    await db.setSetting('current_subject', s.id);
+    await reloadStructure();
+    return s;
+  }
+
+  /// מחיקת יומן (רק אם יש עוד יומן). הנתונים מסומנים כמחוקים והתזכורות מבוטלות.
+  Future<void> deleteJournal(Subject s) async {
+    if (subjects.length < 2) return;
+    final n = Notifications.instance;
+    for (final t in allTypes.where((t) => ownerOf(t.subjectId) == s.id)) {
+      await n.cancel(Notifications.typeId(t.id));
+      await db.softDelete('event_types', t.id);
+    }
+    for (final m in allMeds.where((m) => ownerOf(m.subjectId) == s.id)) {
+      await n.cancel(Notifications.medId(m.id));
+      await db.softDelete('meds', m.id);
+    }
+    for (final a in await db.appointments(subjectId: s.id)) {
+      await n.cancelAppointment(a);
+      await db.softDelete('appointments', a.id);
+    }
+    for (final f in await db.openFollowUps(subjectId: s.id)) {
+      await n.cancel(Notifications.followUpId(f.id));
+      await db.softDelete('follow_ups', f.id);
+    }
+    await db.deleteSubject(s.id);
+    if (subject?.id == s.id) await db.setSetting('current_subject', null);
+    await reloadStructure();
+  }
+
+  /// מעבר ליומן של פריט (לפני פתיחת מסך מהתראה של יומן אחר).
+  Future<void> showJournalOf(String? itemSubjectId) async {
+    final owner = ownerOf(itemSubjectId);
+    if (owner != null && owner != subject?.id) await switchJournal(owner);
+  }
+
+  /// משימות מעקב פתוחות של היומן הנוכחי.
+  Future<List<FollowUp>> openFollowUpsHere() => db.openFollowUps(
+    subjectId: subjectId,
+    includeUnassigned: subjectId == _firstId,
+  );
+
   // ---------- אירועים ----------
 
+  /// אירוע חדש. היומן נקבע לפי הסוג (גם כשנרשם מהתראה של יומן אחר).
   LogEvent newEvent(String typeId, {Map<String, dynamic>? values}) => LogEvent(
     id: newId(),
-    subjectId: subjectId,
+    subjectId: ownerOf(typeById[typeId]?.subjectId) ?? subjectId,
     typeId: typeId,
     timestamp: DateTime.now(),
     values: values,
@@ -122,7 +227,9 @@ class AppState extends ChangeNotifier {
     final t = typeById[typeId];
     if (t == null) return;
     if (t.isMed) {
-      for (final m in meds) {
+      for (final m in allMeds.where(
+        (m) => ownerOf(m.subjectId) == ownerOf(t.subjectId),
+      )) {
         final lastMed = m.active ? await db.lastMedEvent(m.id) : null;
         if (lastMed != null) {
           await Notifications.instance.scheduleMedReminder(

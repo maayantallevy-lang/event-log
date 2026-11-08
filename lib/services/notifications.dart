@@ -115,6 +115,14 @@ class Notifications {
     ),
   ];
 
+  // ---------- שם היומן בכותרת (כשיש יותר מיומן אחד) ----------
+
+  /// מזהה יומן -> "שם · ". ריק כשיש יומן אחד בלבד. מתעדכן ב-AppState.load.
+  static Map<String, String> journalPrefix = {};
+  static String? firstJournalId;
+  static String _pfx(String? subjectId) =>
+      journalPrefix[subjectId ?? firstJournalId] ?? '';
+
   // ---------- מזהי התראות ----------
   // המזהים במסד הם מחרוזות; ההתראה צריכה int יציב כדי שאפשר יהיה לבטל אותה.
   static int _h(String s) => stableHash(s) % 400000;
@@ -138,7 +146,7 @@ class Notifications {
     final when = last.add(Duration(minutes: (h * 60).round()));
     await _schedule(
       typeId(t.id),
-      'הגיע הזמן: ${t.name}',
+      '${_pfx(t.subjectId)}הגיע הזמן: ${t.name}',
       'הפעם האחרונה: ${fmtTime(last)}',
       when,
       'log:${t.id}',
@@ -149,7 +157,7 @@ class Notifications {
   Future<void> snoozeType(EventType t) async {
     await _schedule(
       typeId(t.id),
-      'הגיע הזמן: ${t.name}',
+      '${_pfx(t.subjectId)}הגיע הזמן: ${t.name}',
       'נודניק',
       DateTime.now().add(const Duration(minutes: 15)),
       'log:${t.id}',
@@ -166,7 +174,7 @@ class Notifications {
     final when = last.add(Duration(minutes: (h * 60).round()));
     await _schedule(
       medId(m.id),
-      'תרופה: ${m.name}',
+      '${_pfx(m.subjectId)}תרופה: ${m.name}',
       'המנה האחרונה ניתנה ב-${fmtTime(last)}',
       when,
       'med:${m.id}',
@@ -177,7 +185,7 @@ class Notifications {
   Future<void> snoozeMed(Med m) async {
     await _schedule(
       medId(m.id),
-      'תרופה: ${m.name}',
+      '${_pfx(m.subjectId)}תרופה: ${m.name}',
       'נודניק',
       DateTime.now().add(const Duration(minutes: 15)),
       'med:${m.id}',
@@ -199,7 +207,7 @@ class Notifications {
       );
       await _schedule(
         apptId(a.id, i),
-        'תור: ${a.title}',
+        '${_pfx(a.subjectId)}תור: ${a.title}',
         '${weekdayName(a.scheduledAt)} ${fmtTime(a.scheduledAt)}$where',
         when,
         'appt:${a.id}',
@@ -208,7 +216,7 @@ class Notifications {
     if (!a.followUpAsked) {
       await _schedule(
         apptAskId(a.id),
-        'איך היה בתור "${a.title}"?',
+        '${_pfx(a.subjectId)}איך היה בתור "${a.title}"?',
         'קיבלת מרשם או הפניה? לחץ לסיכום קצר',
         a.scheduledAt.add(const Duration(hours: 1)),
         'ask:${a.id}',
@@ -241,7 +249,7 @@ class Notifications {
     }
     await _schedule(
       followUpId(f.id),
-      'תזכורת: ${f.title}',
+      '${_pfx(f.subjectId)}תזכורת: ${f.title}',
       'סמן "בוצע" כשסיימת ואפסיק להזכיר',
       when,
       'followup:${f.id}',

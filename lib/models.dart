@@ -84,12 +84,28 @@ class Subject {
   final String name;
   final DateTime? startDate;
   final String? startKind;
+
+  /// מפתח התבנית שממנה נוצר היומן (baby/pregnancy/health/empty), לאייקון.
+  final String? template;
+  final int sortOrder;
   Subject({
     required this.id,
     required this.name,
     this.startDate,
     this.startKind,
+    this.template,
+    this.sortOrder = 0,
   });
+
+  Subject copyWith({String? name, DateTime? startDate, String? startKind}) =>
+      Subject(
+        id: id,
+        name: name ?? this.name,
+        startDate: startDate ?? this.startDate,
+        startKind: startKind ?? this.startKind,
+        template: template,
+        sortOrder: sortOrder,
+      );
 
   factory Subject.fromMap(Map<String, Object?> m) => Subject(
     id: m['id'] as String,
@@ -98,6 +114,8 @@ class Subject {
         ? null
         : DateTime.fromMillisecondsSinceEpoch(m['start_date'] as int),
     startKind: m['start_kind'] as String?,
+    template: m['template'] as String?,
+    sortOrder: m['sort_order'] as int? ?? 0,
   );
 
   Map<String, Object?> toMap() => {
@@ -105,6 +123,8 @@ class Subject {
     'name': name,
     'start_date': startDate?.millisecondsSinceEpoch,
     'start_kind': startKind,
+    'template': template,
+    'sort_order': sortOrder,
   };
 }
 
@@ -119,6 +139,9 @@ class EventType {
   String? statFieldId;
   String statAgg;
   bool hidden;
+
+  /// היומן שהסוג שייך אליו. null = נתון ישן (לפני יומנים מרובים) - שייך ליומן הראשון.
+  String? subjectId;
   List<EventField> fields;
 
   EventType({
@@ -132,6 +155,7 @@ class EventType {
     this.statFieldId,
     this.statAgg = StatAgg.sum,
     this.hidden = false,
+    this.subjectId,
     List<EventField>? fields,
   }) : fields = fields ?? [];
 
@@ -148,10 +172,12 @@ class EventType {
     statFieldId: m['stat_field_id'] as String?,
     statAgg: m['stat_agg'] as String? ?? StatAgg.sum,
     hidden: _b(m['hidden']),
+    subjectId: m['subject_id'] as String?,
   );
 
   Map<String, Object?> toMap() => {
     'id': id,
+    'subject_id': subjectId,
     'name': name,
     'icon': icon,
     'color': color,
@@ -296,6 +322,9 @@ class Med {
   double? intervalHours;
   bool active;
 
+  /// היומן שהתרופה שייכת אליו. null = נתון ישן - שייך ליומן הראשון.
+  String? subjectId;
+
   Med({
     required this.id,
     required this.name,
@@ -303,6 +332,7 @@ class Med {
     this.unit,
     this.intervalHours,
     this.active = true,
+    this.subjectId,
   });
 
   factory Med.fromMap(Map<String, Object?> m) => Med(
@@ -312,10 +342,12 @@ class Med {
     unit: m['unit'] as String?,
     intervalHours: (m['interval_hours'] as num?)?.toDouble(),
     active: (m['active'] as int? ?? 1) == 1,
+    subjectId: m['subject_id'] as String?,
   );
 
   Map<String, Object?> toMap() => {
     'id': id,
+    'subject_id': subjectId,
     'name': name,
     'default_dose': defaultDose,
     'unit': unit,
@@ -403,8 +435,12 @@ class FollowUp {
   String remindDailyAt; // "HH:mm"
   DateTime? doneAt;
 
+  /// null = נתון ישן - שייך ליומן הראשון.
+  final String? subjectId;
+
   FollowUp({
     required this.id,
+    this.subjectId,
     this.appointmentId,
     required this.kind,
     required this.title,
@@ -417,6 +453,7 @@ class FollowUp {
 
   factory FollowUp.fromMap(Map<String, Object?> m) => FollowUp(
     id: m['id'] as String,
+    subjectId: m['subject_id'] as String?,
     appointmentId: m['appointment_id'] as String?,
     kind: m['kind'] as String,
     title: m['title'] as String,
@@ -429,6 +466,7 @@ class FollowUp {
 
   Map<String, Object?> toMap() => {
     'id': id,
+    'subject_id': subjectId,
     'appointment_id': appointmentId,
     'kind': kind,
     'title': title,

@@ -40,6 +40,7 @@ class _EventTypesScreenState extends State<EventTypesScreen> {
       icon: 'star',
       color: palette[state.types.length % palette.length],
       sortOrder: state.types.length,
+      subjectId: state.subjectId,
     );
     final saved = await showDialog<EventType>(
       context: context,
@@ -72,7 +73,7 @@ class _EventTypesScreenState extends State<EventTypesScreen> {
       ),
     );
     if (tpl == null) return;
-    await state.db.addTemplateTypes(tpl);
+    await state.db.addTemplateTypes(tpl, state.subjectId);
     await state.reloadStructure();
   }
 
@@ -616,6 +617,7 @@ class _TypeDialogState extends State<_TypeDialog> {
                 statFieldId: t.statFieldId,
                 statAgg: t.statAgg,
                 hidden: t.hidden,
+                subjectId: t.subjectId,
                 fields: t.fields,
               ),
             );

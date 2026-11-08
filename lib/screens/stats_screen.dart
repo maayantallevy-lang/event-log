@@ -71,10 +71,9 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   EventType? get type {
-    if (typeId == null) {
-      final v = state.visibleTypes;
-      if (v.isNotEmpty) typeId = v.first.id;
-    }
+    final v = state.visibleTypes;
+    // אחרי מעבר יומן: הסוג הקודם לא שייך ליומן הנוכחי.
+    if (!v.any((t) => t.id == typeId)) typeId = v.isEmpty ? null : v.first.id;
     return state.typeById[typeId];
   }
 
@@ -106,7 +105,12 @@ class _StatsScreenState extends State<StatsScreen> {
     }
     final from = rangeStart;
     final to = rangeEnd;
-    final evs = await state.db.events(from: from, to: to, typeIds: {t.id});
+    final evs = await state.db.events(
+      subjectId: state.subjectId,
+      from: from,
+      to: to,
+      typeIds: {t.id},
+    );
 
     final list = <_Bucket>[];
     if (range == StatRange.day) {

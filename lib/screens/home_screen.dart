@@ -6,6 +6,7 @@ import '../app_state.dart';
 import '../db/app_db.dart';
 import '../models.dart';
 import '../util/format.dart';
+import '../widgets/journal_picker.dart';
 import '../widgets/log_sheet.dart';
 import 'appointment_screen.dart';
 import 'follow_up_sheet.dart';
@@ -51,10 +52,11 @@ class _HomeScreenState extends State<HomeScreen> {
       final e = await db.lastEventOfType(t.id);
       if (e != null) map[t.id] = e;
     }
-    final r = await db.events(limit: 5);
-    final up = await db.appointments(upcomingOnly: true);
-    final awaiting = await db.appointmentsAwaitingFollowUp();
-    final fu = await db.openFollowUps();
+    final sid = state.subjectId;
+    final r = await db.events(subjectId: sid, limit: 5);
+    final up = await db.appointments(subjectId: sid, upcomingOnly: true);
+    final awaiting = await db.appointmentsAwaitingFollowUp(sid);
+    final fu = await state.openFollowUpsHere();
     if (!mounted) return;
     setState(() {
       lastByType = map;
@@ -78,7 +80,25 @@ class _HomeScreenState extends State<HomeScreen> {
         : elapsedText(subj!.startDate!, subj.startKind);
     return Scaffold(
       appBar: AppBar(
-        title: Text(subj?.name ?? 'יומנון'),
+        title: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => showJournalPicker(context),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    subj?.name ?? 'יומנון',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const Icon(Icons.arrow_drop_down),
+              ],
+            ),
+          ),
+        ),
         actions: [_syncIndicator()],
         bottom: subtitle == null
             ? null
